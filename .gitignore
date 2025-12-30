@@ -6,3 +6,5 @@ venv/
 .DS_Store
 # runtime data
 /data/
+*.mp4
+*.csv
