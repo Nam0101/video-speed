@@ -21,6 +21,7 @@ App listens on http://localhost:8080. Upload a video, drag the FPS slider (1–6
 - Ảnh PNG/JPG/JPEG → WebP: `POST /png-to-webp`
 - GIF → WebP động: `POST /gif-to-webp`
 - Batch PNG/JPG/JPEG → ZIP WebP: `POST /images-to-webp-zip`
+- Batch ảnh PNG/JPG/JPEG/WebP → ZIP (webp/png/jpg): `POST /images-convert-zip`
 - Nhiều ảnh → WebP động: `POST /images-to-animated-webp`
 - MP4/video → WebP động: `POST /mp4-to-animated-webp`
 

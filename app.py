@@ -91,6 +91,13 @@ def _allowed_image_suffix(filename: str) -> str | None:
     return None
 
 
+def _allowed_static_image_suffix(filename: str) -> str | None:
+    suffix = (Path(filename).suffix or "").lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+        return suffix
+    return None
+
+
 def _allowed_gif_suffix(filename: str) -> str | None:
     suffix = (Path(filename).suffix or "").lower()
     if suffix == ".gif":
@@ -105,6 +112,76 @@ def _safe_zip_entry_name(raw_stem: str, *, index: int) -> str:
     stem = (raw_stem or "").strip() or f"image_{index:04d}"
     stem = _ZIP_NAME_SAFE_RE.sub("_", stem).strip("._-") or f"image_{index:04d}"
     return f"{index:04d}_{stem}.webp"
+
+
+def _safe_zip_entry_name_with_ext(raw_stem: str, *, index: int, ext: str) -> str:
+    stem = (raw_stem or "").strip() or f"image_{index:04d}"
+    stem = _ZIP_NAME_SAFE_RE.sub("_", stem).strip("._-") or f"image_{index:04d}"
+    ext = (ext or "").lower().strip()
+    if not ext.startswith("."):
+        ext = f".{ext}"
+    if ext not in {".webp", ".png", ".jpg"}:
+        ext = ".png"
+    return f"{index:04d}_{stem}{ext}"
+
+
+def _parse_bool(raw: object | None) -> bool:
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _convert_image(
+    input_path: Path,
+    *,
+    target: str,
+    width: int | None = None,
+    quality: int | None = None,
+    lossless: bool = False,
+    output_path: Path | None = None,
+) -> Path:
+    target = (target or "").strip().lower()
+    if target == "jpeg":
+        target = "jpg"
+    if target not in {"webp", "png", "jpg"}:
+        abort(400, "Định dạng output không hợp lệ (format: webp/png/jpg)")
+
+    if output_path is None:
+        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.{target}"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    vf_parts: list[str] = []
+    if width is not None:
+        vf_parts.append(f"scale={width}:-1:flags=lanczos")
+    vf = ",".join(vf_parts) if vf_parts else None
+
+    cmd: list[str] = ["ffmpeg", "-y", "-i", str(input_path)]
+    if vf:
+        cmd += ["-vf", vf]
+
+    if target == "webp":
+        cmd += [
+            "-an",
+            "-c:v",
+            "libwebp",
+            "-compression_level",
+            "6",
+        ]
+        if lossless:
+            cmd += ["-lossless", "1"]
+        else:
+            q = 80 if quality is None else quality
+            cmd += ["-lossless", "0", "-q:v", str(q)]
+    elif target == "png":
+        cmd += ["-an", "-c:v", "png"]
+    else:  # jpg
+        q = 85 if quality is None else quality
+        # ffmpeg's JPEG quality scale is ~2(best)..31(worst). Map 1..100 -> 31..2.
+        jpeg_q = int(round(31 - (max(1, min(100, q)) - 1) * (29 / 99)))
+        jpeg_q = max(2, min(31, jpeg_q))
+        cmd += ["-an", "-q:v", str(jpeg_q)]
+
+    cmd.append(str(output_path))
+    _run_ffmpeg(cmd)
+    return output_path
 
 
 def _convert_video(
@@ -522,6 +599,37 @@ def index():
                             <input id="batchImgFiles" type="file" accept="image/png,image/jpeg" multiple />
                             <button id="batchConvertBtn" type="button">Convert batch → ZIP</button>
                             <div class="status" id="batchStatus">Chưa chọn nhiều ảnh.</div>
+
+                            <div style="height: 12px;"></div>
+                            <label for="batch2ImgFiles">6) Batch convert ảnh → ZIP (WebP/PNG/JPG)</label>
+                            <input id="batch2ImgFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+                            <div class="row-3" style="margin-top: 10px;">
+                                <div>
+                                    <label for="batch2Format" style="margin-bottom:6px;">Format</label>
+                                    <select id="batch2Format">
+                                        <option value="webp" selected>webp</option>
+                                        <option value="png">png</option>
+                                        <option value="jpg">jpg</option>
+                                    </select>
+                                </div>
+                                <div id="batch2QualityWrap">
+                                    <label for="batch2Quality" style="margin-bottom:6px;">Quality (1–100)</label>
+                                    <input id="batch2Quality" type="number" min="1" max="100" value="80" />
+                                </div>
+                                <div>
+                                    <label for="batch2Width" style="margin-bottom:6px;">Resize width (px)</label>
+                                    <input id="batch2Width" type="number" min="0" max="4096" value="0" />
+                                </div>
+                            </div>
+                            <div id="batch2LosslessWrap" style="margin-top: 10px;">
+                                <label style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                                    <input id="batch2Lossless" type="checkbox" />
+                                    Lossless WebP (bỏ qua quality)
+                                </label>
+                                <div class="small" style="margin-top:6px;">Nếu không chọn lossless, PNG sẽ tự dùng lossless, còn JPG/WebP sẽ dùng lossy theo quality.</div>
+                            </div>
+                            <button id="batch2ConvertBtn" type="button">Convert ảnh → ZIP</button>
+                            <div class="status" id="batch2Status">Chưa chọn nhiều ảnh.</div>
                         </div>
 
                         <div>
@@ -578,6 +686,16 @@ def index():
                 const batchImgFiles = document.getElementById('batchImgFiles');
                 const batchConvertBtn = document.getElementById('batchConvertBtn');
                 const batchStatus = document.getElementById('batchStatus');
+
+                const batch2ImgFiles = document.getElementById('batch2ImgFiles');
+                const batch2Format = document.getElementById('batch2Format');
+                const batch2QualityWrap = document.getElementById('batch2QualityWrap');
+                const batch2Quality = document.getElementById('batch2Quality');
+                const batch2Width = document.getElementById('batch2Width');
+                const batch2LosslessWrap = document.getElementById('batch2LosslessWrap');
+                const batch2Lossless = document.getElementById('batch2Lossless');
+                const batch2ConvertBtn = document.getElementById('batch2ConvertBtn');
+                const batch2Status = document.getElementById('batch2Status');
 
                 let fileId = null;
                 let debounceTimer = null;
@@ -859,6 +977,48 @@ def index():
                     } catch (err) {
                         console.error(err);
                         batchStatus.textContent = 'Lỗi: ' + err.message;
+                        setWebpInfo('Lỗi');
+                    }
+                });
+
+                function syncBatch2Ui() {
+                    const fmt = String(batch2Format.value || 'webp');
+                    batch2LosslessWrap.classList.toggle('hidden', fmt !== 'webp');
+                    batch2QualityWrap.classList.toggle('hidden', fmt === 'png');
+                }
+                batch2Format.addEventListener('change', syncBatch2Ui);
+                syncBatch2Ui();
+
+                batch2ConvertBtn.addEventListener('click', async () => {
+                    const files = Array.from(batch2ImgFiles.files || []);
+                    if (files.length === 0) { batch2Status.textContent = 'Hãy chọn nhiều ảnh.'; return; }
+
+                    const fmt = String(batch2Format.value || 'webp');
+                    const quality = Number(batch2Quality.value || 0);
+                    const width = Number(batch2Width.value || 0);
+                    const lossless = Boolean(batch2Lossless.checked);
+
+                    batch2Status.textContent = `Đang convert ${files.length} ảnh → ${fmt}...`;
+                    setWebpInfo('Đang xử lý…');
+
+                    const form = new FormData();
+                    for (const f of files) form.append('files', f);
+                    form.append('format', fmt);
+                    if (width && width > 0) form.append('width', String(width));
+                    if (fmt !== 'png' && quality && quality > 0) form.append('quality', String(quality));
+                    // Only send lossless when forcing it; otherwise server auto-picks lossless for PNG inputs.
+                    if (fmt === 'webp' && lossless) form.append('lossless', '1');
+
+                    try {
+                        const res = await fetch('/images-convert-zip', { method: 'POST', body: form });
+                        if (!res.ok) throw new Error(await res.text());
+                        const blob = await res.blob();
+                        downloadBlob(blob, `images_${files.length}_${fmt}.zip`);
+                        batch2Status.textContent = `Xong (${files.length} ảnh → ${fmt}).`;
+                        setWebpInfo('Hoàn tất');
+                    } catch (err) {
+                        console.error(err);
+                        batch2Status.textContent = 'Lỗi: ' + err.message;
                         setWebpInfo('Lỗi');
                     }
                 });
@@ -1193,6 +1353,96 @@ def images_to_webp_zip():
         mimetype="application/zip",
         as_attachment=True,
         download_name=f"images_{len(output_paths)}_webp.zip",
+    )
+
+
+@app.post("/images-convert-zip")
+def images_convert_zip():
+    files = request.files.getlist("files")
+    if not files:
+        abort(400, "Thiếu danh sách ảnh (files)")
+
+    target = (request.form.get("format") or "").strip().lower()
+    if target == "jpeg":
+        target = "jpg"
+    if target not in {"webp", "png", "jpg"}:
+        abort(400, "Thiếu/ sai format (webp/png/jpg)")
+
+    width_raw = request.form.get("width")
+    width: int | None = None
+    if width_raw not in (None, "", "0"):
+        width = _validate_positive_int(width_raw, name="Width", min_value=16, max_value=4096)
+
+    quality_raw = request.form.get("quality")
+    quality: int | None = None
+    if target in {"webp", "jpg"} and quality_raw not in (None, "", "0"):
+        quality = _validate_positive_int(quality_raw, name="Quality", min_value=1, max_value=100)
+
+    lossless_override: bool | None = None
+    if target == "webp" and request.form.get("lossless") is not None:
+        lossless_override = _parse_bool(request.form.get("lossless"))
+
+    batch_dir = OUTPUT_DIR / f"img_convert_{uuid.uuid4().hex}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = batch_dir / "converted_images.zip"
+
+    output_paths: list[Path] = []
+    try:
+        for index, f in enumerate(files, start=1):
+            if f.filename is None or f.filename == "":
+                continue
+
+            suffix = _allowed_static_image_suffix(f.filename)
+            if suffix is None:
+                abort(400, "Chỉ chấp nhận PNG/JPG/JPEG/WebP (trong danh sách ảnh)")
+
+            input_path = batch_dir / f"input_{index:04d}{suffix}"
+            f.save(input_path)
+
+            output_ext = f".{target}"
+            output_name = _safe_zip_entry_name_with_ext(Path(f.filename).stem, index=index, ext=output_ext)
+            output_path = batch_dir / output_name
+
+            lossless = False
+            if target == "webp":
+                if lossless_override is None:
+                    lossless = suffix == ".png"
+                else:
+                    lossless = lossless_override
+
+            _convert_image(
+                input_path,
+                target=target,
+                width=width,
+                quality=quality,
+                lossless=lossless,
+                output_path=output_path,
+            )
+            output_paths.append(output_path)
+
+        if not output_paths:
+            abort(400, "Không có ảnh hợp lệ")
+
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for output_path in output_paths:
+                zf.write(output_path, arcname=output_path.name)
+    except HTTPException:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        raise
+    except Exception as exc:  # pragma: no cover
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        abort(500, f"Lỗi ffmpeg/zip: {exc}")
+
+    @after_this_request
+    def cleanup(response):  # type: ignore
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        return response
+
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"images_{len(output_paths)}_{target}.zip",
     )
 
 
