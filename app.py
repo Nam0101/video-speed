@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import subprocess
+import shutil
 import uuid
+import zipfile
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +17,7 @@ from flask import (
     request,
     send_file,
 )
+from werkzeug.exceptions import HTTPException
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -26,6 +30,7 @@ for directory in (UPLOAD_DIR, OUTPUT_DIR):
 MIN_FPS = 1
 MAX_FPS = 60
 MAX_DURATION = 3600  # seconds
+MAX_WEBP_DURATION = 3600  # seconds (for mp4 -> animated webp trim)
 
 app = Flask(__name__)
 
@@ -63,6 +68,45 @@ def _safe_upload_path(filename: str, base: Path) -> Path:
     return candidate
 
 
+def _validate_positive_int(
+    raw: Optional[str | int],
+    *,
+    name: str,
+    min_value: int,
+    max_value: int,
+) -> int:
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        abort(400, f"{name} không hợp lệ")
+    if not (min_value <= val <= max_value):
+        abort(400, f"{name} phải nằm trong khoảng {min_value}-{max_value}")
+    return val
+
+
+def _allowed_image_suffix(filename: str) -> str | None:
+    suffix = (Path(filename).suffix or "").lower()
+    if suffix in {".png", ".jpg", ".jpeg"}:
+        return suffix
+    return None
+
+
+def _allowed_gif_suffix(filename: str) -> str | None:
+    suffix = (Path(filename).suffix or "").lower()
+    if suffix == ".gif":
+        return suffix
+    return None
+
+
+_ZIP_NAME_SAFE_RE = re.compile(r"[^a-zA-Z0-9._-]+")
+
+
+def _safe_zip_entry_name(raw_stem: str, *, index: int) -> str:
+    stem = (raw_stem or "").strip() or f"image_{index:04d}"
+    stem = _ZIP_NAME_SAFE_RE.sub("_", stem).strip("._-") or f"image_{index:04d}"
+    return f"{index:04d}_{stem}.webp"
+
+
 def _convert_video(
     input_path: Path, fps: int, duration: int | None = None, loop: bool = False
 ) -> Path:
@@ -92,6 +136,145 @@ def _convert_video(
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.decode("utf-8", errors="ignore"))
+    return output_path
+
+
+def _run_ffmpeg(cmd: list[str]) -> None:
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.decode("utf-8", errors="ignore"))
+
+
+def _convert_image_to_webp(
+    input_path: Path,
+    *,
+    lossless: bool,
+    output_path: Path | None = None,
+) -> Path:
+    if output_path is None:
+        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.webp"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_path),
+        "-c:v",
+        "libwebp",
+        "-compression_level",
+        "6",
+    ]
+    if lossless:
+        cmd += ["-lossless", "1"]
+    else:
+        cmd += ["-lossless", "0", "-q:v", "80"]
+    cmd.append(str(output_path))
+    _run_ffmpeg(cmd)
+    return output_path
+
+
+def _convert_images_to_animated_webp(
+    frame_paths: list[Path],
+    *,
+    fps: int,
+    width: int | None = None,
+    loop: int = 0,
+) -> Path:
+    if not frame_paths:
+        abort(400, "Thiếu ảnh")
+
+    # Keep list file next to frames so rmtree() cleans everything.
+    list_path = frame_paths[0].parent / f"{uuid.uuid4().hex}_frames.txt"
+    output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.webp"
+    frame_duration = 1.0 / float(fps)
+
+    # Concat demuxer: add final file again (without duration) so the last frame is held.
+    lines: list[str] = []
+    for frame in frame_paths:
+        lines.append(f"file '{frame.as_posix()}'")
+        lines.append(f"duration {frame_duration:.6f}")
+    if frame_paths:
+        lines.append(f"file '{frame_paths[-1].as_posix()}'")
+
+    list_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    vf_parts: list[str] = []
+    if width is not None:
+        vf_parts.append(f"scale={width}:-1:flags=lanczos")
+    vf_parts.append("format=rgba")
+    vf = ",".join(vf_parts)
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str(list_path),
+        "-vsync",
+        "vfr",
+        "-vf",
+        vf,
+        "-an",
+        "-loop",
+        str(loop),
+        "-c:v",
+        "libwebp",
+        "-preset",
+        "default",
+        "-q:v",
+        "80",
+        "-compression_level",
+        "6",
+        str(output_path),
+    ]
+    try:
+        _run_ffmpeg(cmd)
+    finally:
+        list_path.unlink(missing_ok=True)
+    return output_path
+
+
+def _convert_video_to_animated_webp(
+    input_path: Path,
+    *,
+    fps: int,
+    width: int | None = None,
+    duration: int | None = None,
+    loop: int = 0,
+) -> Path:
+    output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.webp"
+
+    vf_parts: list[str] = [f"fps={fps}"]
+    if width is not None:
+        vf_parts.append(f"scale={width}:-1:flags=lanczos")
+    vf_parts.append("format=rgba")
+    vf = ",".join(vf_parts)
+
+    cmd: list[str] = ["ffmpeg", "-y", "-i", str(input_path)]
+    if duration:
+        cmd += ["-t", str(duration)]
+    cmd += [
+        "-vf",
+        vf,
+        "-an",
+        "-loop",
+        str(loop),
+        "-c:v",
+        "libwebp",
+        "-preset",
+        "default",
+        "-q:v",
+        "80",
+        "-compression_level",
+        "6",
+        "-vsync",
+        "0",
+        str(output_path),
+    ]
+    _run_ffmpeg(cmd)
     return output_path
 
 
@@ -178,8 +361,41 @@ def index():
                 .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
                 .status { margin-top: 10px; color: var(--muted); min-height: 20px; font-size: 14px; }
                 video { width: 100%; max-height: 520px; background: black; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); }
+                img.preview-img { width: 100%; max-height: 520px; background: rgba(0,0,0,0.35); object-fit: contain; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); }
                 .tag { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+                .section { margin-top: 22px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,0.06); }
+                h2 { margin: 0 0 10px; font-size: 18px; letter-spacing: -0.01em; }
+                .small { font-size: 13px; color: var(--muted); }
+                .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+                .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+                .tabs { display: inline-flex; gap: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 6px; border-radius: 999px; }
+                .tab-btn {
+                    padding: 8px 12px;
+                    border-radius: 999px;
+                    border: 1px solid transparent;
+                    background: transparent;
+                    color: var(--muted);
+                    font-weight: 700;
+                    cursor: pointer;
+                    width: auto;
+                    margin-top: 0;
+                }
+                .tab-btn.active {
+                    color: var(--text);
+                    background: rgba(255,255,255,0.08);
+                    border-color: rgba(255,255,255,0.12);
+                }
+                .hidden { display: none !important; }
+                input[type=number], select {
+                    width: 100%;
+                    padding: 10px;
+                    border-radius: 10px;
+                    border: 1px solid rgba(255,255,255,0.2);
+                    background: rgba(255,255,255,0.04);
+                    color: var(--text);
+                }
                 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+                @media (max-width: 900px) { .row, .row-3 { grid-template-columns: 1fr; } }
             </style>
         </head>
         <body>
@@ -190,10 +406,16 @@ def index():
                         <h1>Đổi FPS &amp; xem preview tức thì</h1>
                         <p>Tải video, kéo thanh FPS và xem kết quả mới ngay lập tức.</p>
                     </div>
-                    <div class="pill" id="currentFps">Chưa có video</div>
+                    <div style="display:flex; align-items:center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
+                        <div class="tabs" role="tablist" aria-label="Tools">
+                            <button class="tab-btn active" id="tabVideo" type="button" role="tab" aria-selected="true">Video</button>
+                            <button class="tab-btn" id="tabWebp" type="button" role="tab" aria-selected="false">WebP</button>
+                        </div>
+                        <div class="pill" id="currentFps">Chưa có video</div>
+                    </div>
                 </div>
 
-                <div class="grid" style="margin-top: 16px;">
+                <div id="videoSection" class="grid" style="margin-top: 16px;">
                     <div class="control">
                         <label for="file">Chọn video</label>
                         <input id="file" type="file" accept="video/*" />
@@ -218,6 +440,95 @@ def index():
                         <video id="preview" controls playsinline loop muted></video>
                     </div>
                 </div>
+
+                <div id="webpSection" class="section hidden">
+                    <div style="display:flex; align-items:baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                        <div>
+                            <div class="tag">WebP tools</div>
+                            <h2>PNG/JPG → WebP, GIF → WebP, batch ảnh → ZIP WebP, nhiều ảnh → WebP động, MP4 → WebP động</h2>
+                            <div class="small">Tất cả chuyển đổi dùng ffmpeg. WebP động sẽ tải về dưới dạng <code>.webp</code>.</div>
+                        </div>
+                        <div class="pill" id="webpInfo">Sẵn sàng</div>
+                    </div>
+
+                    <div class="grid" style="margin-top: 14px;">
+                        <div class="control">
+                            <label for="imgFile">1) Ảnh (PNG/JPG) → WebP</label>
+                            <input id="imgFile" type="file" accept="image/png,image/jpeg" />
+                            <button id="imgConvertBtn" type="button">Convert &amp; tải về</button>
+                            <div class="status" id="imgStatus">Chưa chọn ảnh.</div>
+
+                            <div style="height: 12px;"></div>
+                            <label for="imgFiles">2) Nhiều ảnh → WebP động</label>
+                            <input id="imgFiles" type="file" accept="image/png,image/jpeg" multiple />
+                            <div class="row-3" style="margin-top: 10px;">
+                                <div>
+                                    <label for="imgAnimFps" style="margin-bottom:6px;">FPS</label>
+                                    <input id="imgAnimFps" type="number" min="1" max="60" value="10" />
+                                </div>
+                                <div>
+                                    <label for="imgAnimWidth" style="margin-bottom:6px;">Width (px)</label>
+                                    <input id="imgAnimWidth" type="number" min="64" max="2048" value="640" />
+                                </div>
+                                <div>
+                                    <label style="margin-bottom:6px;">&nbsp;</label>
+                                    <button id="imgAnimBtn" type="button" style="margin-top:0;">Tạo WebP động</button>
+                                </div>
+                            </div>
+                            <div class="status" id="imgAnimStatus">Chưa chọn nhiều ảnh.</div>
+
+                            <div style="height: 12px;"></div>
+                            <label for="mp4File">3) MP4 → WebP động</label>
+                            <input id="mp4File" type="file" accept="video/mp4,video/*" />
+                            <div class="row-3" style="margin-top: 10px;">
+                                <div>
+                                    <label for="mp4WebpFps" style="margin-bottom:6px;">FPS</label>
+                                    <input id="mp4WebpFps" type="number" min="1" max="60" value="15" />
+                                </div>
+                                <div>
+                                    <label for="mp4WebpWidth" style="margin-bottom:6px;">Width (px)</label>
+                                    <input id="mp4WebpWidth" type="number" min="64" max="2048" value="640" />
+                                </div>
+                                <div>
+                                    <label for="mp4WebpDuration" style="margin-bottom:6px;">Cắt (giây)</label>
+                                    <input id="mp4WebpDuration" type="number" min="1" max="{{max_webp_duration}}" value="6" />
+                                </div>
+                            </div>
+                            <button id="mp4ToWebpBtn" type="button">Convert MP4 → WebP</button>
+                            <div class="status" id="mp4WebpStatus">Chưa chọn MP4.</div>
+
+                            <div style="height: 12px;"></div>
+                            <label for="gifFile">4) GIF → WebP động</label>
+                            <input id="gifFile" type="file" accept="image/gif" />
+                            <div class="row-3" style="margin-top: 10px;">
+                                <div>
+                                    <label for="gifWebpFps" style="margin-bottom:6px;">FPS</label>
+                                    <input id="gifWebpFps" type="number" min="1" max="60" value="15" />
+                                </div>
+                                <div>
+                                    <label for="gifWebpWidth" style="margin-bottom:6px;">Width (px)</label>
+                                    <input id="gifWebpWidth" type="number" min="64" max="2048" value="640" />
+                                </div>
+                                <div>
+                                    <label for="gifWebpDuration" style="margin-bottom:6px;">Cắt (giây)</label>
+                                    <input id="gifWebpDuration" type="number" min="0" max="{{max_webp_duration}}" value="0" />
+                                </div>
+                            </div>
+                            <button id="gifToWebpBtn" type="button">Convert GIF → WebP</button>
+                            <div class="status" id="gifWebpStatus">Chưa chọn GIF.</div>
+
+                            <div style="height: 12px;"></div>
+                            <label for="batchImgFiles">5) Batch PNG/JPG → ZIP WebP</label>
+                            <input id="batchImgFiles" type="file" accept="image/png,image/jpeg" multiple />
+                            <button id="batchConvertBtn" type="button">Convert batch → ZIP</button>
+                            <div class="status" id="batchStatus">Chưa chọn nhiều ảnh.</div>
+                        </div>
+
+                        <div>
+                            <img id="webpPreview" class="preview-img" alt="WebP preview" />
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <script>
@@ -233,11 +544,59 @@ def index():
                 const durationInput = document.getElementById('durationInput');
                 const exportBtn = document.getElementById('exportBtn');
 
+                const tabVideo = document.getElementById('tabVideo');
+                const tabWebp = document.getElementById('tabWebp');
+                const videoSection = document.getElementById('videoSection');
+                const webpSection = document.getElementById('webpSection');
+
+                const webpInfo = document.getElementById('webpInfo');
+                const webpPreview = document.getElementById('webpPreview');
+                const imgFile = document.getElementById('imgFile');
+                const imgConvertBtn = document.getElementById('imgConvertBtn');
+                const imgStatus = document.getElementById('imgStatus');
+
+                const imgFiles = document.getElementById('imgFiles');
+                const imgAnimFps = document.getElementById('imgAnimFps');
+                const imgAnimWidth = document.getElementById('imgAnimWidth');
+                const imgAnimBtn = document.getElementById('imgAnimBtn');
+                const imgAnimStatus = document.getElementById('imgAnimStatus');
+
+                const mp4File = document.getElementById('mp4File');
+                const mp4WebpFps = document.getElementById('mp4WebpFps');
+                const mp4WebpWidth = document.getElementById('mp4WebpWidth');
+                const mp4WebpDuration = document.getElementById('mp4WebpDuration');
+                const mp4ToWebpBtn = document.getElementById('mp4ToWebpBtn');
+                const mp4WebpStatus = document.getElementById('mp4WebpStatus');
+
+                const gifFile = document.getElementById('gifFile');
+                const gifWebpFps = document.getElementById('gifWebpFps');
+                const gifWebpWidth = document.getElementById('gifWebpWidth');
+                const gifWebpDuration = document.getElementById('gifWebpDuration');
+                const gifToWebpBtn = document.getElementById('gifToWebpBtn');
+                const gifWebpStatus = document.getElementById('gifWebpStatus');
+
+                const batchImgFiles = document.getElementById('batchImgFiles');
+                const batchConvertBtn = document.getElementById('batchConvertBtn');
+                const batchStatus = document.getElementById('batchStatus');
+
                 let fileId = null;
                 let debounceTimer = null;
                 let activeController = null;
 
                 function setStatus(text) { statusEl.textContent = text; }
+                function setWebpInfo(text) { webpInfo.textContent = text; }
+
+                function setActiveTab(which) {
+                    const isVideo = which === 'video';
+                    tabVideo.classList.toggle('active', isVideo);
+                    tabWebp.classList.toggle('active', !isVideo);
+                    tabVideo.setAttribute('aria-selected', String(isVideo));
+                    tabWebp.setAttribute('aria-selected', String(!isVideo));
+                    videoSection.classList.toggle('hidden', !isVideo);
+                    webpSection.classList.toggle('hidden', isVideo);
+                }
+                tabVideo.addEventListener('click', () => setActiveTab('video'));
+                tabWebp.addEventListener('click', () => setActiveTab('webp'));
 
                 function enableControls(enabled) {
                     fpsRange.disabled = !enabled;
@@ -341,8 +700,168 @@ def index():
                         if (err.name === 'AbortError') return;
                         console.error(err);
                         setStatus('Lỗi chuyển đổi: ' + err.message);
-                    }
+                        }
                 }
+
+                function downloadBlob(blob, filename) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                }
+
+                function setWebpPreviewFromBlob(blob) {
+                    const url = URL.createObjectURL(blob);
+                    webpPreview.src = url;
+                    // Revoke when a new image is set later; simplest: keep last URL on element.
+                    if (webpPreview.dataset.url) URL.revokeObjectURL(webpPreview.dataset.url);
+                    webpPreview.dataset.url = url;
+                }
+
+                imgConvertBtn.addEventListener('click', async () => {
+                    const file = imgFile.files?.[0];
+                    if (!file) { imgStatus.textContent = 'Hãy chọn PNG/JPG.'; return; }
+
+                    imgStatus.textContent = 'Đang convert...';
+                    setWebpInfo('Đang xử lý…');
+                    const form = new FormData();
+                    form.append('file', file);
+
+                    try {
+                        const res = await fetch('/png-to-webp', { method: 'POST', body: form });
+                        if (!res.ok) throw new Error(await res.text());
+                        const blob = await res.blob();
+                        setWebpPreviewFromBlob(blob);
+                        const outName = (file.name?.replace(/[.](png|jpg|jpeg)$/i, '') || 'image') + '.webp';
+                        downloadBlob(blob, outName);
+                        imgStatus.textContent = 'Xong.';
+                        setWebpInfo('Hoàn tất');
+                    } catch (err) {
+                        console.error(err);
+                        imgStatus.textContent = 'Lỗi: ' + err.message;
+                        setWebpInfo('Lỗi');
+                    }
+                });
+
+                imgAnimBtn.addEventListener('click', async () => {
+                    const files = Array.from(imgFiles.files || []);
+                    if (files.length === 0) { imgAnimStatus.textContent = 'Hãy chọn nhiều ảnh.'; return; }
+                    if (files.length === 1) { imgAnimStatus.textContent = 'Chọn ít nhất 2 ảnh để thấy “động”.'; }
+
+                    const fps = Number(imgAnimFps.value || 10);
+                    const width = Number(imgAnimWidth.value || 640);
+
+                    imgAnimStatus.textContent = 'Đang tạo WebP động...';
+                    setWebpInfo('Đang xử lý…');
+                    const form = new FormData();
+                    for (const f of files) form.append('files', f);
+                    form.append('fps', String(fps));
+                    form.append('width', String(width));
+
+                    try {
+                        const res = await fetch('/images-to-animated-webp', { method: 'POST', body: form });
+                        if (!res.ok) throw new Error(await res.text());
+                        const blob = await res.blob();
+                        setWebpPreviewFromBlob(blob);
+                        downloadBlob(blob, `images_${files.length}frames_${fps}fps.webp`);
+                        imgAnimStatus.textContent = `Xong (${files.length} ảnh @ ${fps} fps).`;
+                        setWebpInfo('Hoàn tất');
+                    } catch (err) {
+                        console.error(err);
+                        imgAnimStatus.textContent = 'Lỗi: ' + err.message;
+                        setWebpInfo('Lỗi');
+                    }
+                });
+
+                mp4ToWebpBtn.addEventListener('click', async () => {
+                    const file = mp4File.files?.[0];
+                    if (!file) { mp4WebpStatus.textContent = 'Hãy chọn MP4.'; return; }
+
+                    const fps = Number(mp4WebpFps.value || 15);
+                    const width = Number(mp4WebpWidth.value || 640);
+                    const duration = Number(mp4WebpDuration.value || 0);
+
+                    mp4WebpStatus.textContent = 'Đang convert MP4 → WebP...';
+                    setWebpInfo('Đang xử lý…');
+                    const form = new FormData();
+                    form.append('file', file);
+                    form.append('fps', String(fps));
+                    form.append('width', String(width));
+                    form.append('duration', String(duration));
+
+                    try {
+                        const res = await fetch('/mp4-to-animated-webp', { method: 'POST', body: form });
+                        if (!res.ok) throw new Error(await res.text());
+                        const blob = await res.blob();
+                        setWebpPreviewFromBlob(blob);
+                        downloadBlob(blob, `video_${fps}fps_${duration || 'full'}s.webp`);
+                        mp4WebpStatus.textContent = `Xong (${fps} fps, width ${width}px, cắt ${duration}s).`;
+                        setWebpInfo('Hoàn tất');
+                    } catch (err) {
+                        console.error(err);
+                        mp4WebpStatus.textContent = 'Lỗi: ' + err.message;
+                        setWebpInfo('Lỗi');
+                    }
+                });
+
+                gifToWebpBtn.addEventListener('click', async () => {
+                    const file = gifFile.files?.[0];
+                    if (!file) { gifWebpStatus.textContent = 'Hãy chọn GIF.'; return; }
+
+                    const fps = Number(gifWebpFps.value || 15);
+                    const width = Number(gifWebpWidth.value || 640);
+                    const duration = Number(gifWebpDuration.value || 0);
+
+                    gifWebpStatus.textContent = 'Đang convert GIF → WebP...';
+                    setWebpInfo('Đang xử lý…');
+                    const form = new FormData();
+                    form.append('file', file);
+                    form.append('fps', String(fps));
+                    form.append('width', String(width));
+                    form.append('duration', String(duration));
+
+                    try {
+                        const res = await fetch('/gif-to-webp', { method: 'POST', body: form });
+                        if (!res.ok) throw new Error(await res.text());
+                        const blob = await res.blob();
+                        setWebpPreviewFromBlob(blob);
+                        const base = (file.name?.replace(/[.]gif$/i, '') || 'gif');
+                        downloadBlob(blob, `${base}_${fps}fps_${duration || 'full'}s.webp`);
+                        gifWebpStatus.textContent = `Xong (${fps} fps, width ${width}px, cắt ${duration || 'full'}).`;
+                        setWebpInfo('Hoàn tất');
+                    } catch (err) {
+                        console.error(err);
+                        gifWebpStatus.textContent = 'Lỗi: ' + err.message;
+                        setWebpInfo('Lỗi');
+                    }
+                });
+
+                batchConvertBtn.addEventListener('click', async () => {
+                    const files = Array.from(batchImgFiles.files || []);
+                    if (files.length === 0) { batchStatus.textContent = 'Hãy chọn nhiều ảnh.'; return; }
+
+                    batchStatus.textContent = `Đang convert ${files.length} ảnh...`;
+                    setWebpInfo('Đang xử lý…');
+                    const form = new FormData();
+                    for (const f of files) form.append('files', f);
+
+                    try {
+                        const res = await fetch('/images-to-webp-zip', { method: 'POST', body: form });
+                        if (!res.ok) throw new Error(await res.text());
+                        const blob = await res.blob();
+                        downloadBlob(blob, `images_${files.length}_webp.zip`);
+                        batchStatus.textContent = `Xong (${files.length} ảnh).`;
+                        setWebpInfo('Hoàn tất');
+                    } catch (err) {
+                        console.error(err);
+                        batchStatus.textContent = 'Lỗi: ' + err.message;
+                        setWebpInfo('Lỗi');
+                    }
+                });
             </script>
         </body>
         </html>
@@ -350,6 +869,7 @@ def index():
         min_fps=MIN_FPS,
         max_fps=MAX_FPS,
         max_duration=MAX_DURATION,
+        max_webp_duration=MAX_WEBP_DURATION,
     )
 
 
@@ -440,6 +960,240 @@ def serve_upload(filename: str):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/png-to-webp")
+def png_to_webp():
+    """Convert an uploaded PNG/JPG image to WebP and return the converted file."""
+    file = request.files.get("file")
+    if file is None or file.filename == "":
+        abort(400, "Thiếu file ảnh")
+
+    filename = file.filename
+    suffix = _allowed_image_suffix(filename)
+    if suffix is None:
+        abort(400, "Chỉ chấp nhận PNG/JPG/JPEG")
+
+    input_name = f"{uuid.uuid4().hex}{suffix}"
+    input_path = UPLOAD_DIR / input_name
+    file.save(input_path)
+
+    try:
+        output_path = _convert_image_to_webp(input_path, lossless=(suffix == ".png"))
+    except Exception as exc:  # pragma: no cover
+        abort(500, f"Lỗi ffmpeg: {exc}")
+
+    @after_this_request
+    def cleanup(response):  # type: ignore
+        input_path.unlink(missing_ok=True)
+        output_path.unlink(missing_ok=True)
+        return response
+
+    return send_file(
+        output_path,
+        mimetype="image/webp",
+        as_attachment=True,
+        download_name=Path(filename).stem + ".webp",
+    )
+
+
+@app.post("/images-to-animated-webp")
+def images_to_animated_webp():
+    files = request.files.getlist("files")
+    if not files:
+        abort(400, "Thiếu danh sách ảnh (files)")
+
+    fps = _validate_positive_int(request.form.get("fps"), name="FPS", min_value=1, max_value=60)
+    width_raw = request.form.get("width")
+    width: int | None = None
+    if width_raw not in (None, "", "0"):
+        width = _validate_positive_int(width_raw, name="Width", min_value=64, max_value=2048)
+
+    batch_dir = OUTPUT_DIR / f"frames_{uuid.uuid4().hex}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    frame_paths: list[Path] = []
+    output_path: Path | None = None
+
+    try:
+        for index, f in enumerate(files, start=1):
+            if f.filename is None or f.filename == "":
+                continue
+            suffix = _allowed_image_suffix(f.filename)
+            if suffix is None:
+                abort(400, "Chỉ chấp nhận PNG/JPG/JPEG (trong danh sách ảnh)")
+            frame_path = batch_dir / f"frame_{index:04d}{suffix}"
+            f.save(frame_path)
+            frame_paths.append(frame_path)
+
+        if not frame_paths:
+            abort(400, "Không có ảnh hợp lệ")
+
+        output_path = _convert_images_to_animated_webp(frame_paths, fps=fps, width=width, loop=0)
+    except HTTPException:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        raise
+    except Exception as exc:  # pragma: no cover
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        abort(500, f"Lỗi ffmpeg: {exc}")
+
+    @after_this_request
+    def cleanup(response):  # type: ignore
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        if output_path is not None:
+            output_path.unlink(missing_ok=True)
+        return response
+
+    return send_file(
+        output_path,
+        mimetype="image/webp",
+        as_attachment=True,
+        download_name=f"images_{len(frame_paths)}frames_{fps}fps.webp",
+    )
+
+
+@app.post("/mp4-to-animated-webp")
+def mp4_to_animated_webp():
+    file = request.files.get("file")
+    if file is None or file.filename == "":
+        abort(400, "Thiếu file MP4")
+
+    fps = _validate_positive_int(request.form.get("fps"), name="FPS", min_value=1, max_value=60)
+    width_raw = request.form.get("width")
+    width: int | None = None
+    if width_raw not in (None, "", "0"):
+        width = _validate_positive_int(width_raw, name="Width", min_value=64, max_value=2048)
+
+    duration_raw = request.form.get("duration")
+    duration: int | None = None
+    if duration_raw not in (None, "", "0"):
+        duration = _validate_positive_int(
+            duration_raw, name="Thời lượng", min_value=1, max_value=MAX_WEBP_DURATION
+        )
+
+    suffix = Path(file.filename).suffix or ".mp4"
+    input_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
+    file.save(input_path)
+
+    try:
+        output_path = _convert_video_to_animated_webp(
+            input_path, fps=fps, width=width, duration=duration, loop=0
+        )
+    except Exception as exc:  # pragma: no cover
+        input_path.unlink(missing_ok=True)
+        abort(500, f"Lỗi ffmpeg: {exc}")
+
+    @after_this_request
+    def cleanup(response):  # type: ignore
+        input_path.unlink(missing_ok=True)
+        output_path.unlink(missing_ok=True)
+        return response
+
+    return send_file(
+        output_path,
+        mimetype="image/webp",
+        as_attachment=True,
+        download_name=f"video_{fps}fps_{duration or 'full'}s.webp",
+    )
+
+
+@app.post("/gif-to-webp")
+def gif_to_webp():
+    file = request.files.get("file")
+    if file is None or file.filename == "":
+        abort(400, "Thiếu file GIF")
+
+    if _allowed_gif_suffix(file.filename) is None:
+        abort(400, "Chỉ chấp nhận GIF")
+
+    fps = _validate_positive_int(request.form.get("fps"), name="FPS", min_value=1, max_value=60)
+    width_raw = request.form.get("width")
+    width: int | None = None
+    if width_raw not in (None, "", "0"):
+        width = _validate_positive_int(width_raw, name="Width", min_value=64, max_value=2048)
+
+    duration_raw = request.form.get("duration")
+    duration: int | None = None
+    if duration_raw not in (None, "", "0"):
+        duration = _validate_positive_int(
+            duration_raw, name="Thời lượng", min_value=1, max_value=MAX_WEBP_DURATION
+        )
+
+    input_path = UPLOAD_DIR / f"{uuid.uuid4().hex}.gif"
+    file.save(input_path)
+
+    try:
+        output_path = _convert_video_to_animated_webp(
+            input_path, fps=fps, width=width, duration=duration, loop=0
+        )
+    except Exception as exc:  # pragma: no cover
+        input_path.unlink(missing_ok=True)
+        abort(500, f"Lỗi ffmpeg: {exc}")
+
+    @after_this_request
+    def cleanup(response):  # type: ignore
+        input_path.unlink(missing_ok=True)
+        output_path.unlink(missing_ok=True)
+        return response
+
+    return send_file(
+        output_path,
+        mimetype="image/webp",
+        as_attachment=True,
+        download_name=f"gif_{fps}fps_{duration or 'full'}s.webp",
+    )
+
+
+@app.post("/images-to-webp-zip")
+def images_to_webp_zip():
+    files = request.files.getlist("files")
+    if not files:
+        abort(400, "Thiếu danh sách ảnh (files)")
+
+    batch_dir = OUTPUT_DIR / f"webp_batch_{uuid.uuid4().hex}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = batch_dir / "webp_images.zip"
+
+    output_paths: list[Path] = []
+    try:
+        for index, f in enumerate(files, start=1):
+            if f.filename is None or f.filename == "":
+                continue
+            suffix = _allowed_image_suffix(f.filename)
+            if suffix is None:
+                abort(400, "Chỉ chấp nhận PNG/JPG/JPEG (trong danh sách ảnh)")
+
+            input_path = batch_dir / f"input_{index:04d}{suffix}"
+            f.save(input_path)
+
+            output_name = _safe_zip_entry_name(Path(f.filename).stem, index=index)
+            output_path = batch_dir / output_name
+            _convert_image_to_webp(input_path, lossless=(suffix == ".png"), output_path=output_path)
+            output_paths.append(output_path)
+
+        if not output_paths:
+            abort(400, "Không có ảnh hợp lệ")
+
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for output_path in output_paths:
+                zf.write(output_path, arcname=output_path.name)
+    except HTTPException:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        raise
+    except Exception as exc:  # pragma: no cover
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        abort(500, f"Lỗi ffmpeg/zip: {exc}")
+
+    @after_this_request
+    def cleanup(response):  # type: ignore
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        return response
+
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"images_{len(output_paths)}_webp.zip",
+    )
 
 
 if __name__ == "__main__":

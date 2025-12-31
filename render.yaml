@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: video-speed
+    env: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true

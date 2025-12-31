@@ -1,0 +1,18 @@
+.git
+.gitignore
+.venv
+__pycache__/
+*.pyc
+
+# Local media/assets (keep build context small)
+data/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.webm
+*.gif
+*.webp
+*.zip
+
+out.csv
