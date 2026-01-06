@@ -22,8 +22,11 @@ App listens on http://localhost:8080. Upload a video, drag the FPS slider (1–6
 - GIF → WebP động: `POST /gif-to-webp`
 - Batch PNG/JPG/JPEG → ZIP WebP: `POST /images-to-webp-zip`
 - Batch ảnh PNG/JPG/JPEG/WebP → ZIP (webp/png/jpg): `POST /images-convert-zip`
+- **Batch WebP/GIF Resize**: `POST /batch-animated-resize-zip` - Resize WebP/GIF (animated) with optional width, height, and target KB
+- **Batch WebP Resize + Size Control**: `POST /webp-resize-zip` - Resize multiple images to same size with target file size in KB
 - Nhiều ảnh → WebP động: `POST /images-to-animated-webp`
 - MP4/video → WebP động: `POST /mp4-to-animated-webp`
+- **Batch TGS → GIF (ZIP)**: `POST /tgs-to-gif-zip` - Convert Telegram stickers (.tgs) to GIF with FPS, quality, and size controls
 
 ## Deploy to Render
 This app needs `ffmpeg` at runtime, so the simplest Render deploy is using Docker.
