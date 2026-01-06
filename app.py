@@ -559,6 +559,34 @@ def _convert_tgs_to_gif(
         abort(500, f"Lỗi chuyển đổi TGS sang GIF: {str(e)}")
 
 
+def _convert_webm_to_gif(
+    input_path: Path,
+    *,
+    fps: int = 15,
+    width: int = 640,
+    output_path: Path | None = None,
+) -> Path:
+    if output_path is None:
+        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.gif"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Palette generation for better quality
+    # filters: fps -> scale -> split to generate palette -> paletteuse
+    vf = f"fps={fps},scale={width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_path),
+        "-vf",
+        vf,
+        str(output_path),
+    ]
+    _run_ffmpeg(cmd)
+    return output_path
+
+
 # ---------------------------- Routes --------------------------------------
 
 @app.get("/")
@@ -1110,6 +1138,10 @@ def index():
                                 <span class="nav-icon">🎨</span>
                                 <span>TGS → GIF</span>
                             </button>
+                            <button class="nav-item" id="navWebmGif" data-section="webm-gif">
+                                <span class="nav-icon">🎞️</span>
+                                <span>WebM → GIF</span>
+                            </button>
                         </nav>
                     </div>
 
@@ -1460,6 +1492,39 @@ def index():
                             </div>
                         </div>
                     </div>
+
+                    <!-- WebM to GIF Section -->
+                    <div id="webmGifSection" class="section-content hidden">
+                        <div class="grid">
+                            <div class="controls-panel">
+                                <div class="feature-card">
+                                    <div class="feature-title">WebM → GIF</div>
+                                    <label for="webmFile">Chọn file WebM</label>
+                                    <input id="webmFile" type="file" accept="video/webm" />
+                                    <div class="row-3" style="margin-top: 10px;">
+                                        <div>
+                                            <label for="webmFps" style="margin-bottom:6px;">FPS</label>
+                                            <input id="webmFps" type="number" min="1" max="60" value="15" />
+                                        </div>
+                                        <div>
+                                            <label for="webmWidth" style="margin-bottom:6px;">Width (px)</label>
+                                            <input id="webmWidth" type="number" min="64" max="2048" value="640" />
+                                        </div>
+                                    </div>
+                                    <button id="webmConvertBtn" type="button">🎞️ Convert WebM → GIF</button>
+                                    <div class="status" id="webmStatus">Chưa chọn file.</div>
+                                </div>
+                            </div>
+                            <div class="preview-container">
+                                <img id="webmPreview" class="preview-img" alt="GIF Preview" style="display:none;" />
+                                <div style="text-align: center; color: var(--text-muted);">
+                                    <div style="font-size: 4rem; margin-bottom: 16px;">🎞️</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;">WebM → GIF</div>
+                                    <div class="small">Preview kết quả tại đây</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1522,6 +1587,13 @@ def index():
                 const tgsWidth = document.getElementById('tgsWidth');
                 const tgsConvertBtn = document.getElementById('tgsConvertBtn');
                 const tgsStatus = document.getElementById('tgsStatus');
+
+                const webmFile = document.getElementById('webmFile');
+                const webmFps = document.getElementById('webmFps');
+                const webmWidth = document.getElementById('webmWidth');
+                const webmConvertBtn = document.getElementById('webmConvertBtn');
+                const webmStatus = document.getElementById('webmStatus');
+                const webmPreview = document.getElementById('webmPreview');
 
                 let fileId = null;
                 let debounceTimer = null;
@@ -1640,6 +1712,7 @@ def index():
                     const batchConvertSection = document.getElementById('batchConvertSection');
                     const batchResizeSection = document.getElementById('batchResizeSection');
                     const tgsGifSection = document.getElementById('tgsGifSection');
+                    const webmGifSection = document.getElementById('webmGifSection');
 
                     const allSections = [
                         videoSection,
@@ -1648,7 +1721,9 @@ def index():
                         videoWebpSection,
                         batchConvertSection,
                         batchResizeSection,
-                        tgsGifSection
+                        batchResizeSection,
+                        tgsGifSection,
+                        webmGifSection
                     ];
 
                     console.log('Navigation initialized. Nav items:', navItems.length);
@@ -1678,7 +1753,8 @@ def index():
                             'video-webp': videoWebpSection,
                             'batch-convert': batchConvertSection,
                             'batch-resize': batchResizeSection,
-                            'tgs-gif': tgsGifSection
+                            'tgs-gif': tgsGifSection,
+                            'webm-gif': webmGifSection
                         };
 
                         const targetSection = sectionMap[sectionName];
@@ -2105,6 +2181,39 @@ def index():
                     } catch (err) {
                         console.error(err);
                         tgsStatus.textContent = 'Lỗi: ' + err.message;
+                    }
+                });
+
+                // WebM to GIF conversion
+                webmConvertBtn.addEventListener('click', async () => {
+                    const file = webmFile.files?.[0];
+                    if (!file) { webmStatus.textContent = 'Hãy chọn file WebM.'; return; }
+
+                    const fps = Number(webmFps.value || 15);
+                    const width = Number(webmWidth.value || 640);
+
+                    webmStatus.textContent = 'Đang convert WebM → GIF...';
+                    const form = new FormData();
+                    form.append('file', file);
+                    form.append('fps', String(fps));
+                    form.append('width', String(width));
+
+                    try {
+                        const res = await fetch('/webm-to-gif', { method: 'POST', body: form });
+                        if (!res.ok) throw new Error(await res.text());
+                        const blob = await res.blob();
+                        
+                        const url = URL.createObjectURL(blob);
+                        webmPreview.src = url;
+                        webmPreview.style.display = 'block';
+                        // hide placeholder
+                        webmPreview.nextElementSibling.style.display = 'none';
+                        
+                        downloadBlob(blob, `webm_to_gif_${fps}fps.gif`);
+                        webmStatus.textContent = `Xong (${fps} fps, width ${width}px).`;
+                    } catch (err) {
+                        console.error(err);
+                        webmStatus.textContent = 'Lỗi: ' + err.message;
                     }
                 });
             </script>
@@ -2804,6 +2913,41 @@ def webp_resize_zip():
         mimetype="application/zip",
         as_attachment=True,
         download_name=f"resized_{len(output_paths)}_{target}.zip",
+    )
+
+
+@app.post("/webm-to-gif")
+def webm_to_gif():
+    file = request.files.get("file")
+    if file is None or file.filename == "":
+        abort(400, "Thiếu file WebM")
+
+    fps = _validate_positive_int(request.form.get("fps"), name="FPS", min_value=1, max_value=60)
+    width_raw = request.form.get("width")
+    width: int = 640
+    if width_raw not in (None, "", "0"):
+        width = _validate_positive_int(width_raw, name="Width", min_value=64, max_value=2048)
+
+    input_path = UPLOAD_DIR / f"{uuid.uuid4().hex}.webm"
+    file.save(input_path)
+
+    try:
+        output_path = _convert_webm_to_gif(input_path, fps=fps, width=width)
+    except Exception as exc:
+        input_path.unlink(missing_ok=True)
+        abort(500, f"Lỗi ffmpeg: {exc}")
+
+    @after_this_request
+    def cleanup(response):
+        input_path.unlink(missing_ok=True)
+        output_path.unlink(missing_ok=True)
+        return response
+
+    return send_file(
+        output_path,
+        mimetype="image/gif",
+        as_attachment=True,
+        download_name=f"webm_converted_{fps}fps_{width}px.gif",
     )
 
 
