@@ -534,23 +534,23 @@ def _convert_tgs_to_gif(
         # Parse Lottie animation
         animation = objects.Animation.load(lottie_data)
 
-        # Calculate dimensions
+        # Map width to renderer DPI (96 is the base scale).
+        dpi = 96
         if width:
-            # Maintain aspect ratio
-            aspect_ratio = animation.height / animation.width
-            height = int(width * aspect_ratio)
-        else:
-            width = int(animation.width)
-            height = int(animation.height)
+            scale = width / animation.width if animation.width else 1
+            dpi = max(1, int(round(96 * scale)))
+
+        # Map requested fps to skip_frames (renderer uses original frame rate).
+        skip_frames = 1
+        if fps and animation.frame_rate:
+            skip_frames = max(1, int(round(animation.frame_rate / fps)))
 
         # Export to GIF
         export_gif(
             animation,
             str(output_path),
-            width=width,
-            height=height,
-            quality=quality if quality else 80,
-            fps=fps,
+            dpi=dpi,
+            skip_frames=skip_frames,
         )
 
         return output_path
