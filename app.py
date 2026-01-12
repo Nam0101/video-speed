@@ -120,7 +120,7 @@ _ZIP_NAME_SAFE_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 def _safe_zip_entry_name(raw_stem: str, *, index: int) -> str:
     stem = (raw_stem or "").strip() or f"image_{index:04d}"
     stem = _ZIP_NAME_SAFE_RE.sub("_", stem).strip("._-") or f"image_{index:04d}"
-    return f"{index:04d}_{stem}.webp"
+    return f"{stem}.webp"
 
 
 def _safe_zip_entry_name_with_ext(raw_stem: str, *, index: int, ext: str) -> str:
@@ -129,9 +129,9 @@ def _safe_zip_entry_name_with_ext(raw_stem: str, *, index: int, ext: str) -> str
     ext = (ext or "").lower().strip()
     if not ext.startswith("."):
         ext = f".{ext}"
-    if ext not in {".webp", ".png", ".jpg"}:
+    if ext not in {".webp", ".png", ".jpg", ".gif"}:
         ext = ".png"
-    return f"{index:04d}_{stem}{ext}"
+    return f"{stem}{ext}"
 
 
 def _parse_bool(raw: object | None) -> bool:
@@ -1968,7 +1968,7 @@ def index():
                         if (!res.ok) throw new Error(await res.text());
                         const blob = await res.blob();
                         setWebpPreviewFromBlob(blob);
-                        downloadBlob(blob, `video_${fps}fps_${duration || 'full'}s.webp`);
+                        downloadBlob(blob, file.name.replace(/\.[^/.]+$/, "") + ".webp");
                         mp4WebpStatus.textContent = `Xong (${fps} fps, width ${width}px, cắt ${duration}s).`;
                     } catch (err) {
                         console.error(err);
@@ -1996,8 +1996,7 @@ def index():
                         if (!res.ok) throw new Error(await res.text());
                         const blob = await res.blob();
                         setWebpPreviewFromBlob(blob);
-                        const base = (file.name?.replace(/[.]gif$/i, '') || 'gif');
-                        downloadBlob(blob, `${base}_${fps}fps_${duration || 'full'}s.webp`);
+                        downloadBlob(blob, file.name.replace(/\.[^/.]+$/, "") + ".webp");
                         gifWebpStatus.textContent = `Xong (${fps} fps, width ${width}px, cắt ${duration || 'full'}).`;
                     } catch (err) {
                         console.error(err);
@@ -2209,7 +2208,7 @@ def index():
                         // hide placeholder
                         webmPreview.nextElementSibling.style.display = 'none';
                         
-                        downloadBlob(blob, `webm_to_gif_${fps}fps.gif`);
+                        downloadBlob(blob, file.name.replace(/\.[^/.]+$/, "") + ".gif");
                         webmStatus.textContent = `Xong (${fps} fps, width ${width}px).`;
                     } catch (err) {
                         console.error(err);
@@ -2446,7 +2445,7 @@ def mp4_to_animated_webp():
         output_path,
         mimetype="image/webp",
         as_attachment=True,
-        download_name=f"video_{fps}fps_{duration or 'full'}s.webp",
+        download_name=Path(file.filename).stem + ".webp",
     )
 
 
@@ -2493,7 +2492,7 @@ def gif_to_webp():
         output_path,
         mimetype="image/webp",
         as_attachment=True,
-        download_name=f"gif_{fps}fps_{duration or 'full'}s.webp",
+        download_name=Path(file.filename).stem + ".webp",
     )
 
 
@@ -2947,7 +2946,7 @@ def webm_to_gif():
         output_path,
         mimetype="image/gif",
         as_attachment=True,
-        download_name=f"webm_converted_{fps}fps_{width}px.gif",
+        download_name=Path(file.filename).stem + ".gif",
     )
 
 
