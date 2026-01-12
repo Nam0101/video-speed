@@ -9,8 +9,6 @@ import json
 import gzip
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
-import sqlite3
 
 from flask import (
     Flask,
@@ -44,33 +42,6 @@ MAX_DURATION = 3600  # seconds
 MAX_WEBP_DURATION = 3600  # seconds (for mp4 -> animated webp trim)
 
 app = Flask(__name__)
-DB_PATH = DATA_DIR / "logs.db"
-
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_db():
-    try:
-        conn = get_db_connection()
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                event_name TEXT,
-                device_name TEXT,
-                version_code TEXT,
-                params TEXT
-            )
-        ''')
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"DB Init Error: {e}")
-
-# Initialize DB on start
-init_db()
 
 
 # ---------------------------- Helpers -------------------------------------
@@ -149,7 +120,7 @@ _ZIP_NAME_SAFE_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 def _safe_zip_entry_name(raw_stem: str, *, index: int) -> str:
     stem = (raw_stem or "").strip() or f"image_{index:04d}"
     stem = _ZIP_NAME_SAFE_RE.sub("_", stem).strip("._-") or f"image_{index:04d}"
-    return f"{stem}.webp"
+    return f"{index:04d}_{stem}.webp"
 
 
 def _safe_zip_entry_name_with_ext(raw_stem: str, *, index: int, ext: str) -> str:
@@ -158,9 +129,9 @@ def _safe_zip_entry_name_with_ext(raw_stem: str, *, index: int, ext: str) -> str
     ext = (ext or "").lower().strip()
     if not ext.startswith("."):
         ext = f".{ext}"
-    if ext not in {".webp", ".png", ".jpg", ".gif"}:
+    if ext not in {".webp", ".png", ".jpg"}:
         ext = ".png"
-    return f"{stem}{ext}"
+    return f"{index:04d}_{stem}{ext}"
 
 
 def _parse_bool(raw: object | None) -> bool:
@@ -433,104 +404,6 @@ def _convert_video_to_animated_webp(
     return output_path
 
 
-def _resize_animated_media(
-    input_path: Path,
-    *,
-    width: int | None = None,
-    height: int | None = None,
-    quality: int | None = None,
-    target_size_kb: int | None = None,
-    output_path: Path | None = None,
-) -> Path:
-    """Resize animated WebP or GIF with optional size control."""
-    suffix = input_path.suffix.lower()
-    if suffix not in {".webp", ".gif"}:
-        abort(400, "Chỉ hỗ trợ WebP hoặc GIF")
-
-    if output_path is None:
-        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}{suffix}"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Build scale filter
-    vf_parts: list[str] = []
-    if width is not None and height is not None:
-        vf_parts.append(f"scale={width}:{height}:flags=lanczos")
-    elif width is not None:
-        vf_parts.append(f"scale={width}:-1:flags=lanczos")
-    elif height is not None:
-        vf_parts.append(f"scale=-1:{height}:flags=lanczos")
-
-    # If target size is specified, try iteratively
-    if target_size_kb is not None and suffix == ".webp":
-        best_quality = quality if quality is not None else 90
-        min_quality = 10
-
-        for q in range(best_quality, min_quality - 1, -5):
-            cmd: list[str] = ["ffmpeg", "-y", "-i", str(input_path)]
-
-            if vf_parts:
-                vf_parts_copy = vf_parts.copy()
-                vf_parts_copy.append("format=rgba")
-                cmd += ["-vf", ",".join(vf_parts_copy)]
-            else:
-                cmd += ["-vf", "format=rgba"]
-
-            cmd += [
-                "-an",
-                "-c:v",
-                "libwebp",
-                "-preset",
-                "default",
-                "-q:v",
-                str(q),
-                "-compression_level",
-                "6",
-                "-loop",
-                "0",
-                str(output_path),
-            ]
-            _run_ffmpeg(cmd)
-
-            # Check file size
-            file_size_kb = output_path.stat().st_size / 1024
-            if file_size_kb <= target_size_kb or q <= min_quality:
-                break
-
-        return output_path
-
-    # Standard conversion without size constraint
-    cmd: list[str] = ["ffmpeg", "-y", "-i", str(input_path)]
-
-    if vf_parts:
-        if suffix == ".webp":
-            vf_parts.append("format=rgba")
-        cmd += ["-vf", ",".join(vf_parts)]
-    elif suffix == ".webp":
-        cmd += ["-vf", "format=rgba"]
-
-    if suffix == ".webp":
-        q = 80 if quality is None else quality
-        cmd += [
-            "-an",
-            "-c:v",
-            "libwebp",
-            "-preset",
-            "default",
-            "-q:v",
-            str(q),
-            "-compression_level",
-            "6",
-            "-loop",
-            "0",
-            str(output_path),
-        ]
-    else:  # gif
-        cmd += ["-c:v", "gif", "-loop", "0", str(output_path)]
-
-    _run_ffmpeg(cmd)
-    return output_path
-
-
 def _allowed_tgs_suffix(filename: str) -> bool:
     return Path(filename).suffix.lower() == ".tgs"
 
@@ -563,23 +436,23 @@ def _convert_tgs_to_gif(
         # Parse Lottie animation
         animation = objects.Animation.load(lottie_data)
 
-        # Map width to renderer DPI (96 is the base scale).
-        dpi = 96
+        # Calculate dimensions
         if width:
-            scale = width / animation.width if animation.width else 1
-            dpi = max(1, int(round(96 * scale)))
-
-        # Map requested fps to skip_frames (renderer uses original frame rate).
-        skip_frames = 1
-        if fps and animation.frame_rate:
-            skip_frames = max(1, int(round(animation.frame_rate / fps)))
+            # Maintain aspect ratio
+            aspect_ratio = animation.height / animation.width
+            height = int(width * aspect_ratio)
+        else:
+            width = int(animation.width)
+            height = int(animation.height)
 
         # Export to GIF
         export_gif(
             animation,
             str(output_path),
-            dpi=dpi,
-            skip_frames=skip_frames,
+            width=width,
+            height=height,
+            quality=quality if quality else 80,
+            fps=fps,
         )
 
         return output_path
@@ -588,40 +461,12 @@ def _convert_tgs_to_gif(
         abort(500, f"Lỗi chuyển đổi TGS sang GIF: {str(e)}")
 
 
-def _convert_webm_to_gif(
-    input_path: Path,
-    *,
-    fps: int = 15,
-    width: int = 640,
-    output_path: Path | None = None,
-) -> Path:
-    if output_path is None:
-        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.gif"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Palette generation for better quality
-    # filters: fps -> scale -> split to generate palette -> paletteuse
-    vf = f"fps={fps},scale={width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
-
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(input_path),
-        "-vf",
-        vf,
-        str(output_path),
-    ]
-    _run_ffmpeg(cmd)
-    return output_path
-
-
 # ---------------------------- Routes --------------------------------------
 
 @app.get("/")
 def index():
     return render_template_string(
-        r"""
+        """
         <!doctype html>
         <html lang="vi">
         <head>
@@ -1049,59 +894,6 @@ def index():
                     background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
                     margin: 20px 0;
                 }
-
-                /* Top Navigation Bar */
-                .top-navbar {
-                    position: sticky;
-                    top: 0;
-                    z-index: 100;
-                    background: rgba(17, 24, 39, 0.95);
-                    backdrop-filter: blur(20px);
-                    border-bottom: 1px solid var(--card-border);
-                    margin: -32px -32px 32px -32px;
-                    padding: 0 32px;
-                    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
-                }
-                .nav-menu {
-                    display: flex;
-                    gap: 4px;
-                    padding: 12px 0;
-                    overflow-x: auto;
-                    scrollbar-width: none;
-                }
-                .nav-menu::-webkit-scrollbar {
-                    display: none;
-                }
-                .nav-item {
-                    padding: 10px 20px;
-                    border-radius: 10px;
-                    background: transparent;
-                    color: var(--text-muted);
-                    font-weight: 600;
-                    font-size: 0.9rem;
-                    border: none;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    white-space: nowrap;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                }
-                .nav-item:hover {
-                    background: rgba(255, 255, 255, 0.05);
-                    color: var(--text);
-                }
-                .nav-item.active {
-                    background: linear-gradient(135deg, var(--primary), var(--secondary));
-                    color: white;
-                    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-                }
-                .nav-icon {
-                    font-size: 1.2rem;
-                }
-                .section-content {
-                    animation: fadeIn 0.4s ease;
-                }
                 @keyframes fadeInUp {
                     from { opacity: 0; transform: translateY(20px); }
                     to { opacity: 1; transform: translateY(0); }
@@ -1123,87 +915,9 @@ def index():
                     .header h1 { font-size: 2rem; }
                     .card { padding: 20px; }
                     .controls-panel { padding: 16px; }
-                    .nav-item { padding: 8px 14px; font-size: 0.85rem; }
-                    .top-navbar { margin: -20px -20px 24px -20px; padding: 0 20px; }
-                    .top-navbar { margin: -20px -20px 24px -20px; padding: 0 20px; }
+                    .tab-btn { padding: 10px 16px; font-size: 0.85rem; }
                 }
-
-                /* Logs Table Styles */
-                .logs-container {
-                    background: rgba(15, 23, 42, 0.4);
-                    border-radius: 16px;
-                    border: 1px solid var(--card-border);
-                    overflow: hidden;
-                }
-                .logs-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    font-size: 0.9rem;
-                }
-                .logs-table thead th {
-                    text-align: left;
-                    padding: 16px;
-                    background: rgba(255, 255, 255, 0.03);
-                    color: var(--text-muted);
-                    font-weight: 600;
-                    border-bottom: 1px solid var(--card-border);
-                    position: sticky;
-                    top: 0;
-                    backdrop-filter: blur(10px);
-                }
-                .logs-table tbody tr {
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-                    transition: background 0.2s;
-                }
-                .logs-table tbody tr:hover {
-                    background: rgba(255, 255, 255, 0.02);
-                }
-                .logs-table td {
-                    padding: 14px 16px;
-                    color: var(--text);
-                    vertical-align: top;
-                }
-                .log-time {
-                    font-family: 'Monaco', 'Consolas', monospace;
-                    font-size: 0.8rem;
-                    color: var(--text-dim);
-                    white-space: nowrap;
-                }
-                .log-device {
-                    font-weight: 500;
-                    color: var(--text);
-                }
-                .log-version {
-                    display: inline-block;
-                    padding: 2px 6px;
-                    background: rgba(59, 130, 246, 0.1);
-                    border: 1px solid rgba(59, 130, 246, 0.2);
-                    border-radius: 4px;
-                    color: var(--primary-light);
-                    font-size: 0.75rem;
-                    margin-top: 4px;
-                }
-                .log-event {
-                    color: var(--accent);
-                    font-weight: 600;
-                }
-                .log-params pre {
-                    margin: 0;
-                    font-family: 'Monaco', 'Consolas', monospace;
-                    font-size: 0.8rem;
-                    color: var(--text-muted);
-                    white-space: pre-wrap;
-                    max-height: 150px;
-                    overflow-y: auto;
-                }
-                .log-empty {
-                    padding: 40px !important;
-                    text-align: center;
-                    color: var(--text-dim);
-                    font-style: italic;
-                }
-                .refresh-spin { animation: spin 1s linear infinite; }
-                @keyframes spin { 100% { transform: rotate(360deg); } }
+            </style>
         </head>
         <body>
             <div class="container">
@@ -1213,49 +927,12 @@ def index():
                 </div>
 
                 <div class="card">
-                    <!-- Top Navigation Bar -->
-                    <div class="top-navbar">
-                        <nav class="nav-menu">
-                            <button class="nav-item active" id="navVideoFps" data-section="video-fps">
-                                <span class="nav-icon">🎥</span>
-                                <span>Video FPS</span>
-                            </button>
-                            <button class="nav-item" id="navImageConvert" data-section="image-convert">
-                                <span class="nav-icon">🖼️</span>
-                                <span>Image Convert</span>
-                            </button>
-                            <button class="nav-item" id="navGifWebp" data-section="gif-webp">
-                                <span class="nav-icon">🎞️</span>
-                                <span>GIF → WebP</span>
-                            </button>
-                            <button class="nav-item" id="navVideoWebp" data-section="video-webp">
-                                <span class="nav-icon">📹</span>
-                                <span>Video → WebP</span>
-                            </button>
-                            <button class="nav-item" id="navBatchConvert" data-section="batch-convert">
-                                <span class="nav-icon">📦</span>
-                                <span>Batch Convert</span>
-                            </button>
-                             <button class="nav-item" id="navBatchResize" data-section="batch-resize">
-                                <span class="nav-icon">🔧</span>
-                                <span>Batch Resize</span>
-                            </button>
-                            <button class="nav-item" id="navTgsGif" data-section="tgs-gif">
-                                <span class="nav-icon">🎨</span>
-                                <span>TGS → GIF</span>
-                            </button>
-                            <button class="nav-item" id="navWebmGif" data-section="webm-gif">
-                                <span class="nav-icon">🎞️</span>
-                                <span>WebM → GIF</span>
-                            </button>
-                            <button class="nav-item" id="navAndroidLogs" data-section="android-logs">
-                                <span class="nav-icon">📱</span>
-                                <span>Android Logs</span>
-                            </button>
-                        </nav>
+                    <div class="tabs" role="tablist" aria-label="Tools">
+                        <button class="tab-btn active" id="tabVideo" type="button" role="tab" aria-selected="true">🎥 Video FPS</button>
+                        <button class="tab-btn" id="tabWebp" type="button" role="tab" aria-selected="false">🖼️ Image Tools</button>
                     </div>
 
-                    <div id="videoSection" class="section-content grid">
+                    <div id="videoSection" class="grid">
                         <div class="controls-panel">
                             <div class="feature-card">
                                 <div class="feature-title">Upload Video</div>
@@ -1299,9 +976,7 @@ def index():
                         </div>
                     </div>
 
-                    
-                    <!-- Image Convert Section -->
-                    <div id="imageConvertSection" class="section-content hidden">
+                    <div id="webpSection" class="hidden">
                         <div class="grid">
                             <div class="controls-panel">
                                 <div class="feature-card">
@@ -1311,369 +986,176 @@ def index():
                                     <button id="imgConvertBtn" type="button">🖼️ Convert & tải về</button>
                                     <div class="status" id="imgStatus">Chưa chọn ảnh.</div>
                                 </div>
-                            </div>
-                            <div class="preview-container">
-                                <img id="webpPreview" class="preview-img" alt="WebP preview" style="display:none;" />
-                                <div style="text-align: center; color: var(--text-muted);">
-                                    <div style="font-size: 4rem; margin-bottom: 16px;">🖼️</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;">Preview Area</div>
-                                    <div class="small">Ảnh đã convert sẽ hiển thị tại đây</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- GIF to WebP Section -->
-                    <div id="gifWebpSection" class="section-content hidden">
-                        <div class="grid">
-                            <div class="controls-panel">
-                                <div class="feature-card">
-                                    <div class="feature-title">GIF → WebP động</div>
-                                    <label for="gifFile">Chọn GIF</label>
-                                    <input id="gifFile" type="file" accept="image/gif" />
-                                    <div class="row-3" style="margin-top: 10px;">
-                                        <div>
-                                            <label for="gifWebpFps" style="margin-bottom:6px;">FPS</label>
-                                            <input id="gifWebpFps" type="number" min="1" max="60" value="15" />
-                                        </div>
-                                        <div>
-                                            <label for="gifWebpWidth" style="margin-bottom:6px;">Width (px)</label>
-                                            <input id="gifWebpWidth" type="number" min="64" max="2048" value="640" />
-                                        </div>
-                                        <div>
-                                            <label for="gifWebpDuration" style="margin-bottom:6px;">Cắt (giây)</label>
-                                            <input id="gifWebpDuration" type="number" min="0" max="{{max_webp_duration}}" value="0" />
-                                        </div>
-                                    </div>
-                                    <button id="gifToWebpBtn" type="button">Convert GIF → WebP</button>
-                                    <div class="status" id="gifWebpStatus">Chưa chọn GIF.</div>
-                                </div>
-                            </div>
-                            <div class="preview-container">
-                                <img id="gifWebpPreview" class="preview-img" alt="Preview" style="display:none;" />
-                                <div style="text-align: center; color: var(--text-muted);">
-                                    <div style="font-size: 4rem; margin-bottom: 16px;">🎞️</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;">GIF Preview</div>
-                                    <div class="small">Preview sẽ hiển thị tại đây</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Video to WebP Section -->
-                    <div id="videoWebpSection" class="section-content hidden">
-                        <div class="grid">
-                            <div class="controls-panel">
-                                <div class="feature-card">
-                                    <div class="feature-title">MP4 → WebP động</div>
-                                    <label for="mp4File">Chọn video</label>
-                                    <input id="mp4File" type="file" accept="video/mp4,video/*" />
-                                    <div class="row-3" style="margin-top: 10px;">
-                                        <div>
-                                            <label for="mp4WebpFps" style="margin-bottom:6px;">FPS</label>
-                                            <input id="mp4WebpFps" type="number" min="1" max="60" value="15" />
-                                        </div>
-                                        <div>
-                                            <label for="mp4WebpWidth" style="margin-bottom:6px;">Width (px)</label>
-                                            <input id="mp4WebpWidth" type="number" min="64" max="2048" value="640" />
-                                        </div>
-                                        <div>
-                                            <label for="mp4WebpDuration" style="margin-bottom:6px;">Cắt (giây)</label>
-                                            <input id="mp4WebpDuration" type="number" min="1" max="{{max_webp_duration}}" value="6" />
-                                        </div>
-                                    </div>
-                                    <button id="mp4ToWebpBtn" type="button">Convert MP4 → WebP</button>
-                                    <div class="status" id="mp4WebpStatus">Chưa chọn MP4.</div>
-                                </div>
 
                                 <div class="divider"></div>
 
                                 <div class="feature-card">
                                     <div class="feature-title">Nhiều ảnh → WebP động</div>
                                     <label for="imgFiles">Chọn nhiều ảnh</label>
-                                    <input id="imgFiles" type="file" accept="image/png,image/jpeg" multiple />
-                                    <div class="row-3" style="margin-top: 10px;">
-                                        <div>
-                                            <label for="imgAnimFps" style="margin-bottom:6px;">FPS</label>
-                                            <input id="imgAnimFps" type="number" min="1" max="60" value="10" />
-                                        </div>
-                                        <div>
-                                            <label for="imgAnimWidth" style="margin-bottom:6px;">Width (px)</label>
-                                            <input id="imgAnimWidth" type="number" min="64" max="2048" value="640" />
-                                        </div>
-                                        <div>
-                                            <label style="margin-bottom:6px;">&nbsp;</label>
-                                            <button id="imgAnimBtn" type="button" style="margin-top:0;">Tạo WebP động</button>
-                                        </div>
-                                    </div>
-                                    <div class="status" id="imgAnimStatus">Chưa chọn nhiều ảnh.</div>
+                            <input id="imgFiles" type="file" accept="image/png,image/jpeg" multiple />
+                            <div class="row-3" style="margin-top: 10px;">
+                                <div>
+                                    <label for="imgAnimFps" style="margin-bottom:6px;">FPS</label>
+                                    <input id="imgAnimFps" type="number" min="1" max="60" value="10" />
+                                </div>
+                                <div>
+                                    <label for="imgAnimWidth" style="margin-bottom:6px;">Width (px)</label>
+                                    <input id="imgAnimWidth" type="number" min="64" max="2048" value="640" />
+                                </div>
+                                <div>
+                                    <label style="margin-bottom:6px;">&nbsp;</label>
+                                    <button id="imgAnimBtn" type="button" style="margin-top:0;">Tạo WebP động</button>
                                 </div>
                             </div>
-                            <div class="preview-container">
-                                <img id="videoWebpPreview" class="preview-img" alt="Preview" style="display:none;" />
-                                <div style="text-align: center; color: var(--text-muted);">
-                                    <div style="font-size: 4rem; margin-bottom: 16px;">📹</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;">Video → WebP</div>
-                                    <div class="small">Preview sẽ hiển thị tại đây</div>
+                            <div class="status" id="imgAnimStatus">Chưa chọn nhiều ảnh.</div>
+
+                            <div style="height: 12px;"></div>
+                            <label for="mp4File">3) MP4 → WebP động</label>
+                            <input id="mp4File" type="file" accept="video/mp4,video/*" />
+                            <div class="row-3" style="margin-top: 10px;">
+                                <div>
+                                    <label for="mp4WebpFps" style="margin-bottom:6px;">FPS</label>
+                                    <input id="mp4WebpFps" type="number" min="1" max="60" value="15" />
                                 </div>
+                                <div>
+                                    <label for="mp4WebpWidth" style="margin-bottom:6px;">Width (px)</label>
+                                    <input id="mp4WebpWidth" type="number" min="64" max="2048" value="640" />
+                                </div>
+                                <div>
+                                    <label for="mp4WebpDuration" style="margin-bottom:6px;">Cắt (giây)</label>
+                                    <input id="mp4WebpDuration" type="number" min="1" max="{{max_webp_duration}}" value="6" />
+                                </div>
+                            </div>
+                            <button id="mp4ToWebpBtn" type="button">Convert MP4 → WebP</button>
+                            <div class="status" id="mp4WebpStatus">Chưa chọn MP4.</div>
+
+                            <div style="height: 12px;"></div>
+                            <label for="gifFile">4) GIF → WebP động</label>
+                            <input id="gifFile" type="file" accept="image/gif" />
+                            <div class="row-3" style="margin-top: 10px;">
+                                <div>
+                                    <label for="gifWebpFps" style="margin-bottom:6px;">FPS</label>
+                                    <input id="gifWebpFps" type="number" min="1" max="60" value="15" />
+                                </div>
+                                <div>
+                                    <label for="gifWebpWidth" style="margin-bottom:6px;">Width (px)</label>
+                                    <input id="gifWebpWidth" type="number" min="64" max="2048" value="640" />
+                                </div>
+                                <div>
+                                    <label for="gifWebpDuration" style="margin-bottom:6px;">Cắt (giây)</label>
+                                    <input id="gifWebpDuration" type="number" min="0" max="{{max_webp_duration}}" value="0" />
+                                </div>
+                            </div>
+                            <button id="gifToWebpBtn" type="button">Convert GIF → WebP</button>
+                            <div class="status" id="gifWebpStatus">Chưa chọn GIF.</div>
+
+                            <div style="height: 12px;"></div>
+                            <label for="batchImgFiles">5) Batch PNG/JPG → ZIP WebP</label>
+                            <input id="batchImgFiles" type="file" accept="image/png,image/jpeg" multiple />
+                            <button id="batchConvertBtn" type="button">Convert batch → ZIP</button>
+                            <div class="status" id="batchStatus">Chưa chọn nhiều ảnh.</div>
+
+                            <div style="height: 12px;"></div>
+                            <label for="batch2ImgFiles">6) Batch convert ảnh → ZIP (WebP/PNG/JPG)</label>
+                            <input id="batch2ImgFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+                            <div class="row-3" style="margin-top: 10px;">
+                                <div>
+                                    <label for="batch2Format" style="margin-bottom:6px;">Format</label>
+                                    <select id="batch2Format">
+                                        <option value="webp" selected>webp</option>
+                                        <option value="png">png</option>
+                                        <option value="jpg">jpg</option>
+                                    </select>
+                                </div>
+                                <div id="batch2QualityWrap">
+                                    <label for="batch2Quality" style="margin-bottom:6px;">Quality (1–100)</label>
+                                    <input id="batch2Quality" type="number" min="1" max="100" value="80" />
+                                </div>
+                                <div>
+                                    <label for="batch2Width" style="margin-bottom:6px;">Resize width (px)</label>
+                                    <input id="batch2Width" type="number" min="0" max="4096" value="0" />
+                                </div>
+                            </div>
+                            <div id="batch2LosslessWrap" style="margin-top: 10px;">
+                                <label style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                                    <input id="batch2Lossless" type="checkbox" />
+                                    Lossless WebP (bỏ qua quality)
+                                </label>
+                                <div class="small" style="margin-top:6px;">Nếu không chọn lossless, PNG sẽ tự dùng lossless, còn JPG/WebP sẽ dùng lossy theo quality.</div>
+                            </div>
+                            <button id="batch2ConvertBtn" type="button">📦 Convert ảnh → ZIP</button>
+                            <div class="status" id="batch2Status">Chưa chọn nhiều ảnh.</div>
+
+                            <div style="height: 12px;"></div>
+                            <label for="webpResizeFiles">7) Batch WebP Resize + Size Control → ZIP</label>
+                            <input id="webpResizeFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+                            <div class="row-3" style="margin-top: 10px;">
+                                <div>
+                                    <label for="webpResizeFormat" style="margin-bottom:6px;">Format</label>
+                                    <select id="webpResizeFormat">
+                                        <option value="webp" selected>webp</option>
+                                        <option value="png">png</option>
+                                        <option value="jpg">jpg</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="webpResizeWidth" style="margin-bottom:6px;">Width (px)</label>
+                                    <input id="webpResizeWidth" type="number" min="16" max="4096" value="800" />
+                                </div>
+                                <div>
+                                    <label for="webpResizeTargetKB" style="margin-bottom:6px;">Target size (KB)</label>
+                                    <input id="webpResizeTargetKB" type="number" min="0" max="10240" value="0" placeholder="0=auto" />
+                                </div>
+                            </div>
+                            <div style="margin-top: 10px;">
+                                <label for="webpResizeQuality" style="margin-bottom:6px;">Quality (1–100, starting point if target size set)</label>
+                                <input id="webpResizeQuality" type="number" min="1" max="100" value="85" />
+                            </div>
+                            <button id="webpResizeBtn" type="button">🔧 Resize + Compress → ZIP</button>
+                            <div class="status" id="webpResizeStatus">Chưa chọn file.</div>
+                            <div class="small" style="margin-top:6px;">
+                                Chọn nhiều ảnh (WebP/PNG/JPG), resize về 1 kích thước và giới hạn dung lượng file (KB).
+                                Nếu target size = 0, chỉ resize và dùng quality cố định.
+                                Nếu target size > 0, tool sẽ tự giảm quality để đạt kích thước mong muốn.
+                            </div>
+
+                            <div class="divider"></div>
+
+                            <div class="feature-card">
+                                <div class="feature-title">Batch TGS → GIF (ZIP)</div>
+                                <div class="drop-zone" id="tgsDropZone">
+                                    <div class="drop-zone-icon">🎨</div>
+                                    <div class="drop-zone-text">Kéo thả file TGS vào đây</div>
+                                    <div class="drop-zone-hint">hoặc click để chọn nhiều file</div>
+                                    <input id="tgsFiles" type="file" accept=".tgs" multiple />
+                                </div>
+                                <div id="tgsFileList" class="file-list hidden"></div>
+                                <div class="row-3" style="margin-top: 10px;">
+                                    <div>
+                                        <label for="tgsFps" style="margin-bottom:6px;">FPS</label>
+                                        <input id="tgsFps" type="number" min="1" max="60" value="30" />
+                                    </div>
+                                    <div>
+                                        <label for="tgsQuality" style="margin-bottom:6px;">Quality (1–100)</label>
+                                        <input id="tgsQuality" type="number" min="1" max="100" value="80" />
+                                    </div>
+                                    <div>
+                                        <label for="tgsWidth" style="margin-bottom:6px;">Width (px, 0=auto)</label>
+                                        <input id="tgsWidth" type="number" min="0" max="2048" value="0" placeholder="Auto" />
+                                    </div>
+                                </div>
+                                <button id="tgsConvertBtn" type="button">🎨 Convert TGS → GIF ZIP</button>
+                                <div class="status" id="tgsStatus">Chưa chọn file TGS.</div>
+                                <div class="small">TGS là Telegram animated sticker. Upload nhiều file để convert sang GIF và tải về dưới dạng ZIP.</div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Batch Convert Section -->
-                    <div id="batchConvertSection" class="section-content hidden">
-                        <div class="grid">
-                            <div class="controls-panel">
-                                <div class="feature-card">
-                                    <div class="feature-title">Batch PNG/JPG → ZIP WebP</div>
-                                    <label for="batchImgFiles">Chọn nhiều ảnh</label>
-                                    <input id="batchImgFiles" type="file" accept="image/png,image/jpeg" multiple />
-                                    <button id="batchConvertBtn" type="button">Convert batch → ZIP</button>
-                                    <div class="status" id="batchStatus">Chưa chọn nhiều ảnh.</div>
-                                </div>
-
-                                <div class="divider"></div>
-
-                                <div class="feature-card">
-                                    <div class="feature-title">Batch convert ảnh → ZIP (WebP/PNG/JPG)</div>
-                                    <label for="batch2ImgFiles">Chọn nhiều ảnh</label>
-                                    <input id="batch2ImgFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple />
-                                    <div class="row-3" style="margin-top: 10px;">
-                                        <div>
-                                            <label for="batch2Format" style="margin-bottom:6px;">Format</label>
-                                            <select id="batch2Format">
-                                                <option value="webp" selected>webp</option>
-                                                <option value="png">png</option>
-                                                <option value="jpg">jpg</option>
-                                            </select>
-                                        </div>
-                                        <div id="batch2QualityWrap">
-                                            <label for="batch2Quality" style="margin-bottom:6px;">Quality (1–100)</label>
-                                            <input id="batch2Quality" type="number" min="1" max="100" value="80" />
-                                        </div>
-                                        <div>
-                                            <label for="batch2Width" style="margin-bottom:6px;">Resize width (px)</label>
-                                            <input id="batch2Width" type="number" min="0" max="4096" value="0" />
-                                        </div>
-                                    </div>
-                                    <div id="batch2LosslessWrap" style="margin-top: 10px;">
-                                        <label style="margin: 0; display: flex; align-items: center; gap: 10px;">
-                                            <input id="batch2Lossless" type="checkbox" />
-                                            Lossless WebP (bỏ qua quality)
-                                        </label>
-                                        <div class="small" style="margin-top:6px;">Nếu không chọn lossless, PNG sẽ tự dùng lossless, còn JPG/WebP sẽ dùng lossy theo quality.</div>
-                                    </div>
-                                    <button id="batch2ConvertBtn" type="button">📦 Convert ảnh → ZIP</button>
-                                    <div class="status" id="batch2Status">Chưa chọn nhiều ảnh.</div>
-                                </div>
-                            </div>
-                            <div class="preview-container">
-                                <div style="text-align: center; color: var(--text-muted);">
-                                    <div style="font-size: 4rem; margin-bottom: 16px;">📦</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;">Batch Convert</div>
-                                    <div class="small">Converted files will be downloaded as ZIP</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Batch Resize Section -->
-                    <div id="batchResizeSection" class="section-content hidden">
-                        <div class="grid">
-                            <div class="controls-panel">
-                                <div class="feature-card">
-                                    <div class="feature-title">Batch WebP/GIF Resize → ZIP</div>
-                                    <label for="animatedResizeFiles">Chọn nhiều file WebP/GIF</label>
-                                    <input id="animatedResizeFiles" type="file" accept="image/webp,.gif" multiple />
-                                    <div class="row-3" style="margin-top: 10px;">
-                                        <div>
-                                            <label for="animatedResizeWidth" style="margin-bottom:6px;">Width (px, 0=giữ nguyên)</label>
-                                            <input id="animatedResizeWidth" type="number" min="0" max="4096" value="0" placeholder="0" />
-                                        </div>
-                                        <div>
-                                            <label for="animatedResizeHeight" style="margin-bottom:6px;">Height (px, 0=giữ nguyên)</label>
-                                            <input id="animatedResizeHeight" type="number" min="0" max="4096" value="0" placeholder="0" />
-                                        </div>
-                                        <div>
-                                            <label for="animatedResizeTargetKB" style="margin-bottom:6px;">Target size (KB, 0=giữ nguyên)</label>
-                                            <input id="animatedResizeTargetKB" type="number" min="0" max="10240" value="0" placeholder="0" />
-                                        </div>
-                                    </div>
-                                    <div style="margin-top: 10px;">
-                                        <label for="animatedResizeQuality" style="margin-bottom:6px;">Quality WebP (1–100, chỉ áp dụng cho WebP)</label>
-                                        <input id="animatedResizeQuality" type="number" min="1" max="100" value="80" />
-                                    </div>
-                                    <button id="animatedResizeBtn" type="button">🎬 Resize WebP/GIF → ZIP</button>
-                                    <div class="status" id="animatedResizeStatus">Chưa chọn file.</div>
-                                    <div class="small" style="margin-top:6px;">
-                                        Batch resize WebP/GIF (bao gồm cả animated). Mọi thông số đều optional:
-                                        <br>• Width/Height = 0: giữ nguyên kích thước
-                                        <br>• Target size = 0: không giới hạn dung lượng
-                                        <br>• Nếu chỉ nhập Width, height sẽ tự scale theo tỷ lệ (và ngược lại)
-                                        <br>• Format output giữ nguyên như input (.webp → .webp, .gif → .gif)
-                                    </div>
-                                </div>
-
-                                <div class="divider"></div>
-
-                                <div class="feature-card">
-                                    <div class="feature-title">Batch Image Resize + Size Control → ZIP</div>
-                                    <label for="webpResizeFiles">Chọn nhiều ảnh</label>
-                                    <input id="webpResizeFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple />
-                                    <div class="row-3" style="margin-top: 10px;">
-                                        <div>
-                                            <label for="webpResizeFormat" style="margin-bottom:6px;">Format</label>
-                                            <select id="webpResizeFormat">
-                                                <option value="webp" selected>webp</option>
-                                                <option value="png">png</option>
-                                                <option value="jpg">jpg</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label for="webpResizeWidth" style="margin-bottom:6px;">Width (px)</label>
-                                            <input id="webpResizeWidth" type="number" min="16" max="4096" value="800" />
-                                        </div>
-                                        <div>
-                                            <label for="webpResizeTargetKB" style="margin-bottom:6px;">Target size (KB)</label>
-                                            <input id="webpResizeTargetKB" type="number" min="0" max="10240" value="0" placeholder="0=auto" />
-                                        </div>
-                                    </div>
-                                    <div style="margin-top: 10px;">
-                                        <label for="webpResizeQuality" style="margin-bottom:6px;">Quality (1–100, starting point if target size set)</label>
-                                        <input id="webpResizeQuality" type="number" min="1" max="100" value="85" />
-                                    </div>
-                                    <button id="webpResizeBtn" type="button">🔧 Resize + Compress → ZIP</button>
-                                    <div class="status" id="webpResizeStatus">Chưa chọn file.</div>
-                                    <div class="small" style="margin-top:6px;">
-                                        Chọn nhiều ảnh (WebP/PNG/JPG), resize về 1 kích thước và giới hạn dung lượng file (KB).
-                                        Nếu target size = 0, chỉ resize và dùng quality cố định.
-                                        Nếu target size > 0, tool sẽ tự giảm quality để đạt kích thước mong muốn.
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="preview-container">
-                                <div style="text-align: center; color: var(--text-muted);">
-                                    <div style="font-size: 4rem; margin-bottom: 16px;">🔧</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;">Batch Resize</div>
-                                    <div class="small">Resized files will be downloaded as ZIP</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- TGS to GIF Section -->
-                    <div id="tgsGifSection" class="section-content hidden">
-                        <div class="grid">
-                            <div class="controls-panel">
-                                <div class="feature-card">
-                                    <div class="feature-title">Batch TGS → GIF (ZIP)</div>
-                                    <div class="drop-zone" id="tgsDropZone">
-                                        <div class="drop-zone-icon">🎨</div>
-                                        <div class="drop-zone-text">Kéo thả file TGS vào đây</div>
-                                        <div class="drop-zone-hint">hoặc click để chọn nhiều file</div>
-                                        <input id="tgsFiles" type="file" accept=".tgs" multiple />
-                                    </div>
-                                    <div id="tgsFileList" class="file-list hidden"></div>
-                                    <div class="row-3" style="margin-top: 10px;">
-                                        <div>
-                                            <label for="tgsFps" style="margin-bottom:6px;">FPS</label>
-                                            <input id="tgsFps" type="number" min="1" max="60" value="30" />
-                                        </div>
-                                        <div>
-                                            <label for="tgsQuality" style="margin-bottom:6px;">Quality (1–100)</label>
-                                            <input id="tgsQuality" type="number" min="1" max="100" value="80" />
-                                        </div>
-                                        <div>
-                                            <label for="tgsWidth" style="margin-bottom:6px;">Width (px, 0=auto)</label>
-                                            <input id="tgsWidth" type="number" min="0" max="2048" value="0" placeholder="Auto" />
-                                        </div>
-                                    </div>
-                                    <button id="tgsConvertBtn" type="button">🎨 Convert TGS → GIF ZIP</button>
-                                    <div class="status" id="tgsStatus">Chưa chọn file TGS.</div>
-                                    <div class="small">TGS là Telegram animated sticker. Upload nhiều file để convert sang GIF và tải về dưới dạng ZIP.</div>
-                                </div>
-                            </div>
-                            <div class="preview-container">
-                                <div style="text-align: center; color: var(--text-muted);">
-                                    <div style="font-size: 4rem; margin-bottom: 16px;">🎨</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;">TGS → GIF Converter</div>
-                                    <div class="small">Preview và download ZIP sau khi convert</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- WebM to GIF Section -->
-                    <div id="webmGifSection" class="section-content hidden">
-                        <div class="grid">
-                            <div class="controls-panel">
-                                <div class="feature-card">
-                                    <div class="feature-title">WebM → GIF</div>
-                                    <label for="webmFile">Chọn file WebM</label>
-                                    <input id="webmFile" type="file" accept="video/webm" />
-                                    <div class="row-3" style="margin-top: 10px;">
-                                        <div>
-                                            <label for="webmFps" style="margin-bottom:6px;">FPS</label>
-                                            <input id="webmFps" type="number" min="1" max="60" value="15" />
-                                        </div>
-                                        <div>
-                                            <label for="webmWidth" style="margin-bottom:6px;">Width (px)</label>
-                                            <input id="webmWidth" type="number" min="64" max="2048" value="640" />
-                                        </div>
-                                    </div>
-                                    <button id="webmConvertBtn" type="button">🎞️ Convert WebM → GIF</button>
-                                    <div class="status" id="webmStatus">Chưa chọn file.</div>
-                                </div>
-                            </div>
-                            <div class="preview-container">
-                                <img id="webmPreview" class="preview-img" alt="GIF Preview" style="display:none;" />
-                                <div style="text-align: center; color: var(--text-muted);">
-                                    <div style="font-size: 4rem; margin-bottom: 16px;">🎞️</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;">WebM → GIF</div>
-                                    <div class="small">Preview kết quả tại đây</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                   <!-- Android Logs Section -->
-                    <div id="androidLogsSection" class="section-content hidden">
-                        <div class="controls-panel" style="width: 100%; max-width: 100%; max-height: none;">
-                            <div class="feature-card" style="border:none; background:transparent; padding:0;">
-                                <div class="feature-title" style="margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
-                                    <div style="display:flex; align-items:center; gap:10px;">
-                                        <span style="font-size: 1.5rem;">📱</span>
-                                        <span style="font-size: 1.25rem;">Android Device Logs</span>
-                                    </div>
-                                    <div style="display:flex; gap:10px;">
-                                        <button id="refreshLogsBtn" style="width:auto; margin:0; padding: 8px 16px; font-size: 0.9rem;">
-                                            🔄 Refresh
-                                        </button>
-                                        <button id="clearLogsBtn" style="width:auto; margin:0; padding: 8px 16px; font-size: 0.9rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5;">
-                                            🗑️ Clear
-                                        </button>
-                                    </div>
-                                </div>
-                                
-                                <div class="logs-container">
-                                    <div style="overflow-x: auto; max-height: 70vh;">
-                                        <table class="logs-table">
-                                            <thead>
-                                                <tr>
-                                                    <th style="width: 160px;">Time</th>
-                                                    <th style="width: 200px;">Device</th>
-                                                    <th style="width: 200px;">Event</th>
-                                                    <th>Parameters</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="logsTableBody">
-                                                <tr>
-                                                    <td colspan="4" class="log-empty">No logs received yet.</td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
+                        <div class="preview-container">
+                            <img id="webpPreview" class="preview-img" alt="WebP preview" style="display:none;" />
+                            <div style="text-align: center; color: var(--text-muted);">
+                                <div style="font-size: 4rem; margin-bottom: 16px;">🖼️</div>
+                                <div style="font-size: 1.1rem; font-weight: 600;">Preview Area</div>
+                                <div class="small">Ảnh đã convert sẽ hiển thị tại đây</div>
                             </div>
                         </div>
                     </div>
@@ -1693,7 +1175,11 @@ def index():
                 const durationInput = document.getElementById('durationInput');
                 const exportBtn = document.getElementById('exportBtn');
 
-                // Removed unused variables for sections here to avoid confusion with initNavigation
+                const tabVideo = document.getElementById('tabVideo');
+                const tabWebp = document.getElementById('tabWebp');
+                const videoSection = document.getElementById('videoSection');
+                const webpSection = document.getElementById('webpSection');
+
                 const webpPreview = document.getElementById('webpPreview');
                 const imgFile = document.getElementById('imgFile');
                 const imgConvertBtn = document.getElementById('imgConvertBtn');
@@ -1739,13 +1225,6 @@ def index():
                 const tgsWidth = document.getElementById('tgsWidth');
                 const tgsConvertBtn = document.getElementById('tgsConvertBtn');
                 const tgsStatus = document.getElementById('tgsStatus');
-
-                const webmFile = document.getElementById('webmFile');
-                const webmFps = document.getElementById('webmFps');
-                const webmWidth = document.getElementById('webmWidth');
-                const webmConvertBtn = document.getElementById('webmConvertBtn');
-                const webmStatus = document.getElementById('webmStatus');
-                const webmPreview = document.getElementById('webmPreview');
 
                 let fileId = null;
                 let debounceTimer = null;
@@ -1854,82 +1333,17 @@ def index():
                     document.getElementById('tgsFileList')
                 );
 
-                // Navigation handling - Initialize after DOM elements are available
-                function initNavigation() {
-                    const navItems = document.querySelectorAll('.nav-item');
-                    const videoSection = document.getElementById('videoSection');
-                    const imageConvertSection = document.getElementById('imageConvertSection');
-                    const gifWebpSection = document.getElementById('gifWebpSection');
-                    const videoWebpSection = document.getElementById('videoWebpSection');
-                    const batchConvertSection = document.getElementById('batchConvertSection');
-                    const batchResizeSection = document.getElementById('batchResizeSection');
-                    const tgsGifSection = document.getElementById('tgsGifSection');
-                    const webmGifSection = document.getElementById('webmGifSection');
-                    const androidLogsSection = document.getElementById('androidLogsSection');
-
-                    const allSections = [
-                        videoSection,
-                        imageConvertSection,
-                        gifWebpSection,
-                        videoWebpSection,
-                        batchConvertSection,
-                        batchResizeSection,
-                        batchResizeSection,
-                        tgsGifSection,
-                        webmGifSection,
-                        androidLogsSection
-                    ];
-
-                    console.log('Navigation initialized. Nav items:', navItems.length);
-
-                    function setActiveSection(sectionName) {
-                        console.log('Switching to section:', sectionName);
-
-                        // Remove active from all nav items
-                        navItems.forEach(item => item.classList.remove('active'));
-
-                        // Add active to clicked item
-                        const activeNav = document.querySelector(`[data-section="${sectionName}"]`);
-                        if (activeNav) {
-                            activeNav.classList.add('active');
-                        }
-
-                        // Hide all sections first
-                        allSections.forEach(section => {
-                            if (section) section.classList.add('hidden');
-                        });
-
-                        // Show the selected section
-                        const sectionMap = {
-                            'video-fps': videoSection,
-                            'image-convert': imageConvertSection,
-                            'gif-webp': gifWebpSection,
-                            'video-webp': videoWebpSection,
-                            'batch-convert': batchConvertSection,
-                            'batch-resize': batchResizeSection,
-                            'tgs-gif': tgsGifSection,
-                            'webm-gif': webmGifSection,
-                            'android-logs': androidLogsSection
-                        };
-
-                        const targetSection = sectionMap[sectionName];
-                        if (targetSection) {
-                            targetSection.classList.remove('hidden');
-                            console.log('Showing section:', sectionName);
-                        }
-                    }
-
-                    // Add click handlers to all nav items
-                    navItems.forEach(item => {
-                        item.addEventListener('click', () => {
-                            const section = item.getAttribute('data-section');
-                            setActiveSection(section);
-                        });
-                    });
+                function setActiveTab(which) {
+                    const isVideo = which === 'video';
+                    tabVideo.classList.toggle('active', isVideo);
+                    tabWebp.classList.toggle('active', !isVideo);
+                    tabVideo.setAttribute('aria-selected', String(isVideo));
+                    tabWebp.setAttribute('aria-selected', String(!isVideo));
+                    videoSection.classList.toggle('hidden', !isVideo);
+                    webpSection.classList.toggle('hidden', isVideo);
                 }
-
-                // Initialize navigation
-                initNavigation();
+                tabVideo.addEventListener('click', () => setActiveTab('video'));
+                tabWebp.addEventListener('click', () => setActiveTab('webp'));
 
                 function enableControls(enabled) {
                     fpsRange.disabled = !enabled;
@@ -2123,7 +1537,7 @@ def index():
                         if (!res.ok) throw new Error(await res.text());
                         const blob = await res.blob();
                         setWebpPreviewFromBlob(blob);
-                        downloadBlob(blob, file.name.replace(/\.[^/.]+$/, "") + ".webp");
+                        downloadBlob(blob, `video_${fps}fps_${duration || 'full'}s.webp`);
                         mp4WebpStatus.textContent = `Xong (${fps} fps, width ${width}px, cắt ${duration}s).`;
                     } catch (err) {
                         console.error(err);
@@ -2151,7 +1565,8 @@ def index():
                         if (!res.ok) throw new Error(await res.text());
                         const blob = await res.blob();
                         setWebpPreviewFromBlob(blob);
-                        downloadBlob(blob, file.name.replace(/\.[^/.]+$/, "") + ".webp");
+                        const base = (file.name?.replace(/[.]gif$/i, '') || 'gif');
+                        downloadBlob(blob, `${base}_${fps}fps_${duration || 'full'}s.webp`);
                         gifWebpStatus.textContent = `Xong (${fps} fps, width ${width}px, cắt ${duration || 'full'}).`;
                     } catch (err) {
                         console.error(err);
@@ -2215,52 +1630,6 @@ def index():
                     } catch (err) {
                         console.error(err);
                         batch2Status.textContent = 'Lỗi: ' + err.message;
-                    }
-                });
-
-                // Animated WebP/GIF batch resize
-                const animatedResizeFiles = document.getElementById('animatedResizeFiles');
-                const animatedResizeWidth = document.getElementById('animatedResizeWidth');
-                const animatedResizeHeight = document.getElementById('animatedResizeHeight');
-                const animatedResizeTargetKB = document.getElementById('animatedResizeTargetKB');
-                const animatedResizeQuality = document.getElementById('animatedResizeQuality');
-                const animatedResizeBtn = document.getElementById('animatedResizeBtn');
-                const animatedResizeStatus = document.getElementById('animatedResizeStatus');
-
-                animatedResizeBtn.addEventListener('click', async () => {
-                    const files = Array.from(animatedResizeFiles.files || []);
-                    if (files.length === 0) {
-                        animatedResizeStatus.textContent = 'Hãy chọn file WebP/GIF.';
-                        return;
-                    }
-
-                    const width = Number(animatedResizeWidth.value || 0);
-                    const height = Number(animatedResizeHeight.value || 0);
-                    const targetKB = Number(animatedResizeTargetKB.value || 0);
-                    const quality = Number(animatedResizeQuality.value || 80);
-
-                    animatedResizeStatus.textContent = `Đang xử lý ${files.length} file...`;
-
-                    const form = new FormData();
-                    for (const f of files) form.append('files', f);
-                    if (width > 0) form.append('width', String(width));
-                    if (height > 0) form.append('height', String(height));
-                    if (targetKB > 0) form.append('target_size_kb', String(targetKB));
-                    if (quality > 0) form.append('quality', String(quality));
-
-                    try {
-                        const res = await fetch('/batch-animated-resize-zip', { method: 'POST', body: form });
-                        if (!res.ok) throw new Error(await res.text());
-                        const blob = await res.blob();
-                        downloadBlob(blob, `animated_resized_${files.length}.zip`);
-
-                        const params = [];
-                        if (width > 0 || height > 0) params.push(`${width || 'auto'}x${height || 'auto'}`);
-                        if (targetKB > 0) params.push(`${targetKB}KB`);
-                        animatedResizeStatus.textContent = `Xong (${files.length} file${params.length ? ', ' + params.join(', ') : ''}).`;
-                    } catch (err) {
-                        console.error(err);
-                        animatedResizeStatus.textContent = 'Lỗi: ' + err.message;
                     }
                 });
 
@@ -2337,105 +1706,6 @@ def index():
                         tgsStatus.textContent = 'Lỗi: ' + err.message;
                     }
                 });
-
-                // WebM to GIF conversion
-                webmConvertBtn.addEventListener('click', async () => {
-                    const file = webmFile.files?.[0];
-                    if (!file) { webmStatus.textContent = 'Hãy chọn file WebM.'; return; }
-
-                    const fps = Number(webmFps.value || 15);
-                    const width = Number(webmWidth.value || 640);
-
-                    webmStatus.textContent = 'Đang convert WebM → GIF...';
-                    const form = new FormData();
-                    form.append('file', file);
-                    form.append('fps', String(fps));
-                    form.append('width', String(width));
-
-                    try {
-                        const res = await fetch('/webm-to-gif', { method: 'POST', body: form });
-                        if (!res.ok) throw new Error(await res.text());
-                        const blob = await res.blob();
-                        
-                        const url = URL.createObjectURL(blob);
-                        webmPreview.src = url;
-                        webmPreview.style.display = 'block';
-                        // hide placeholder
-                        webmPreview.nextElementSibling.style.display = 'none';
-                        
-                        downloadBlob(blob, file.name.replace(/\.[^/.]+$/, "") + ".gif");
-                        webmStatus.textContent = `Xong (${fps} fps, width ${width}px).`;
-                    } catch (err) {
-                        console.error(err);
-                        webmStatus.textContent = 'Lỗi: ' + err.message;
-                    }
-                });
-                // Android Logs Logic
-                const logsTableBody = document.getElementById('logsTableBody');
-                const refreshLogsBtn = document.getElementById('refreshLogsBtn');
-                const clearLogsBtn = document.getElementById('clearLogsBtn');
-
-                async function fetchLogs() {
-                    try {
-                        refreshLogsBtn.disabled = true;
-                        refreshLogsBtn.textContent = 'Refreshing...';
-                        const res = await fetch('/api/android-log');
-                        if (!res.ok) throw new Error(await res.text());
-                        const logs = await res.json();
-                        renderLogs(logs);
-                    } catch (err) {
-                        console.error(err);
-                        // Don't show toast for background refreshes unless crucial
-                    } finally {
-                        refreshLogsBtn.disabled = false;
-                        refreshLogsBtn.textContent = '🔄 Refresh';
-                    }
-                }
-
-                function renderLogs(logs) {
-                    if (!logs || logs.length === 0) {
-                        logsTableBody.innerHTML = '<tr><td colspan="4" class="log-empty">No logs received yet.</td></tr>';
-                        return;
-                    }
-                    // Show newest first
-                    logsTableBody.innerHTML = logs.slice().reverse().map(log => {
-                        const paramsStr = log.params && Object.keys(log.params).length > 0 
-                            ? JSON.stringify(log.params, null, 2) 
-                            : '<span style="color:var(--text-dim); font-style:italic;">No params</span>';
-                            
-                        const deviceName = log.deviceName || 'Unknown Device';
-                        const version = log.versionCode ? `v${log.versionCode}` : '';
-                        
-                        return `
-                            <tr>
-                                <td class="log-time">${log.timestamp}</td>
-                                <td>
-                                    <div class="log-device">${deviceName}</div>
-                                    ${version ? `<div class="log-version">${version}</div>` : ''}
-                                </td>
-                                <td class="log-event">${log.eventName}</td>
-                                <td class="log-params"><pre>${paramsStr}</pre></td>
-                            </tr>
-                        `;
-                    }).join('');
-                }
-
-                refreshLogsBtn.addEventListener('click', fetchLogs);
-                
-                clearLogsBtn.addEventListener('click', async () => {
-                    if(!confirm('Clear all logs?')) return;
-                    try {
-                        await fetch('/api/android-log', { method: 'DELETE' });
-                        fetchLogs();
-                    } catch(e) { console.error(e); }
-                });
-
-                // Auto-fetch when tab is active
-                document.getElementById('navAndroidLogs').addEventListener('click', fetchLogs);
-
-                // Initial fetch
-                fetchLogs();
-
             </script>
         </body>
         </html>
@@ -2534,92 +1804,6 @@ def serve_upload(filename: str):
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-@app.route("/api/android-log", methods=["GET", "POST", "DELETE"])
-def android_log():
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        event_name = data.get("eventName", "Unknown")
-        device_name = data.get("deviceName", "Unknown Device")
-        version_code = str(data.get("versionCode", ""))
-        params_json = json.dumps(data.get("params", {}))
-
-        try:
-            conn = get_db_connection()
-            conn.execute(
-                'INSERT INTO logs (timestamp, event_name, device_name, version_code, params) VALUES (?, ?, ?, ?, ?)',
-                (timestamp, event_name, device_name, version_code, params_json)
-            )
-            conn.commit()
-            conn.close()
-            
-            # Return the entry for client confirmation (optional, simplified)
-            return jsonify({
-                "status": "logged", 
-                "entry": {
-                    "timestamp": timestamp,
-                    "eventName": event_name,
-                    "deviceName": device_name,
-                    "versionCode": version_code,
-                    "params": data.get("params", {})
-                }
-            })
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
-
-    elif request.method == "DELETE":
-        try:
-            conn = get_db_connection()
-            conn.execute('DELETE FROM logs')
-            conn.commit()
-            conn.close()
-            return jsonify({"status": "cleared"})
-        except Exception as e:
-             return jsonify({"status": "error", "message": str(e)}), 500
-
-    else:
-        # GET
-        try:
-            conn = get_db_connection()
-            # Get last 1000 logs
-            logs_db = conn.execute('SELECT * FROM logs ORDER BY id DESC LIMIT 1000').fetchall()
-            conn.close()
-            
-            logs = []
-            for row in logs_db:
-                logs.append({
-                    "timestamp": row["timestamp"],
-                    "eventName": row["event_name"],
-                    "deviceName": row["device_name"],
-                    "versionCode": row["version_code"],
-                    "params": json.loads(row["params"]) if row["params"] else {}
-                })
-            # Reverse to match previous behavior if needed, but UI handles slice().reverse()
-            # API returns newest first (DESC) so UI might not need reverse() if we wanted consistent order, 
-            # but let's send them and let UI handle display.
-            # Current UI does `slice().reverse()`, implying it expects Oldest -> Newest.
-            # Our SQL returns Newest -> Oldest. 
-            # So if UI reverses, it will show Oldest -> Newest at top? 
-            # Wait, UI: `logs.slice().reverse().map(...)`
-            # If API sends [New, Old], Reverse -> [Old, New]. Map renders Top=Old, Bottom=New.
-            # If we want Newest at Top, UI should NOT reverse, or API should send Oldest -> Newest.
-            # Ideally logs are usually appended. 
-            # Let's send Oldest -> Newest (ASC) from SQL to keep compatibility with existing UI logic `slice().reverse()` 
-            # which likely assumes appending array.
-            
-            # Re-query for ASC order to maintain compatibility with simple array append logic
-            # actually strict limit 1000 implies we want 1000 newest.
-            # So: Select * from (Select * form logs order by id DESC limit 1000) order by id ASC
-            
-            # To keep it simple and consistent with "ANDROID_LOGS.append", we should return list in chronological order.
-            logs.reverse() # created from DESC, so reverse makes it ASC (Chronological)
-            
-            return jsonify(logs)
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.post("/png-to-webp")
@@ -2752,7 +1936,7 @@ def mp4_to_animated_webp():
         output_path,
         mimetype="image/webp",
         as_attachment=True,
-        download_name=Path(file.filename).stem + ".webp",
+        download_name=f"video_{fps}fps_{duration or 'full'}s.webp",
     )
 
 
@@ -2799,7 +1983,7 @@ def gif_to_webp():
         output_path,
         mimetype="image/webp",
         as_attachment=True,
-        download_name=Path(file.filename).stem + ".webp",
+        download_name=f"gif_{fps}fps_{duration or 'full'}s.webp",
     )
 
 
@@ -3030,101 +2214,6 @@ def tgs_to_gif_zip():
     )
 
 
-@app.post("/batch-animated-resize-zip")
-def batch_animated_resize_zip():
-    """Batch resize WebP/GIF (including animated) with optional width, height, and size control."""
-    files = request.files.getlist("files")
-    if not files:
-        abort(400, "Thiếu danh sách file (files)")
-
-    # Optional width
-    width_raw = request.form.get("width")
-    width: int | None = None
-    if width_raw not in (None, "", "0"):
-        width = _validate_positive_int(width_raw, name="Width", min_value=16, max_value=4096)
-
-    # Optional height
-    height_raw = request.form.get("height")
-    height: int | None = None
-    if height_raw not in (None, "", "0"):
-        height = _validate_positive_int(height_raw, name="Height", min_value=16, max_value=4096)
-
-    # Optional target file size in KB
-    target_size_raw = request.form.get("target_size_kb")
-    target_size_kb: int | None = None
-    if target_size_raw not in (None, "", "0"):
-        target_size_kb = _validate_positive_int(
-            target_size_raw, name="Target Size KB", min_value=1, max_value=10240
-        )
-
-    # Optional quality (for WebP)
-    quality_raw = request.form.get("quality")
-    quality: int | None = None
-    if quality_raw not in (None, "", "0"):
-        quality = _validate_positive_int(quality_raw, name="Quality", min_value=1, max_value=100)
-
-    batch_dir = OUTPUT_DIR / f"animated_resize_{uuid.uuid4().hex}"
-    batch_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = batch_dir / "resized_animated.zip"
-
-    output_paths: list[Path] = []
-    try:
-        for index, f in enumerate(files, start=1):
-            if f.filename is None or f.filename == "":
-                continue
-
-            # Check if it's WebP or GIF
-            suffix = Path(f.filename).suffix.lower()
-            if suffix not in {".webp", ".gif"}:
-                abort(400, "Chỉ chấp nhận WebP hoặc GIF")
-
-            input_path = batch_dir / f"input_{index:04d}{suffix}"
-            f.save(input_path)
-
-            output_name = _safe_zip_entry_name_with_ext(
-                Path(f.filename).stem, index=index, ext=suffix
-            )
-            output_path = batch_dir / output_name
-
-            # Resize with optional parameters
-            _resize_animated_media(
-                input_path,
-                width=width,
-                height=height,
-                quality=quality,
-                target_size_kb=target_size_kb,
-                output_path=output_path,
-            )
-            output_paths.append(output_path)
-
-        if not output_paths:
-            abort(400, "Không có file hợp lệ")
-
-        # Create ZIP file
-        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for output_path in output_paths:
-                zf.write(output_path, arcname=output_path.name)
-
-    except HTTPException:
-        shutil.rmtree(batch_dir, ignore_errors=True)
-        raise
-    except Exception as exc:
-        shutil.rmtree(batch_dir, ignore_errors=True)
-        abort(500, f"Lỗi xử lý: {exc}")
-
-    @after_this_request
-    def cleanup(response):  # type: ignore
-        shutil.rmtree(batch_dir, ignore_errors=True)
-        return response
-
-    return send_file(
-        zip_path,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=f"resized_{len(output_paths)}_animated.zip",
-    )
-
-
 @app.post("/webp-resize-zip")
 def webp_resize_zip():
     """Batch convert WebP files with resize and target file size control."""
@@ -3219,41 +2308,6 @@ def webp_resize_zip():
         mimetype="application/zip",
         as_attachment=True,
         download_name=f"resized_{len(output_paths)}_{target}.zip",
-    )
-
-
-@app.post("/webm-to-gif")
-def webm_to_gif():
-    file = request.files.get("file")
-    if file is None or file.filename == "":
-        abort(400, "Thiếu file WebM")
-
-    fps = _validate_positive_int(request.form.get("fps"), name="FPS", min_value=1, max_value=60)
-    width_raw = request.form.get("width")
-    width: int = 640
-    if width_raw not in (None, "", "0"):
-        width = _validate_positive_int(width_raw, name="Width", min_value=64, max_value=2048)
-
-    input_path = UPLOAD_DIR / f"{uuid.uuid4().hex}.webm"
-    file.save(input_path)
-
-    try:
-        output_path = _convert_webm_to_gif(input_path, fps=fps, width=width)
-    except Exception as exc:
-        input_path.unlink(missing_ok=True)
-        abort(500, f"Lỗi ffmpeg: {exc}")
-
-    @after_this_request
-    def cleanup(response):
-        input_path.unlink(missing_ok=True)
-        output_path.unlink(missing_ok=True)
-        return response
-
-    return send_file(
-        output_path,
-        mimetype="image/gif",
-        as_attachment=True,
-        download_name=Path(file.filename).stem + ".gif",
     )
 
 
