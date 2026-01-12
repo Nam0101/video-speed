@@ -9,6 +9,8 @@ import json
 import gzip
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
+import sqlite3
 
 from flask import (
     Flask,
@@ -42,6 +44,33 @@ MAX_DURATION = 3600  # seconds
 MAX_WEBP_DURATION = 3600  # seconds (for mp4 -> animated webp trim)
 
 app = Flask(__name__)
+DB_PATH = DATA_DIR / "logs.db"
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    try:
+        conn = get_db_connection()
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                event_name TEXT,
+                device_name TEXT,
+                version_code TEXT,
+                params TEXT
+            )
+        ''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"DB Init Error: {e}")
+
+# Initialize DB on start
+init_db()
 
 
 # ---------------------------- Helpers -------------------------------------
@@ -1096,8 +1125,85 @@ def index():
                     .controls-panel { padding: 16px; }
                     .nav-item { padding: 8px 14px; font-size: 0.85rem; }
                     .top-navbar { margin: -20px -20px 24px -20px; padding: 0 20px; }
+                    .top-navbar { margin: -20px -20px 24px -20px; padding: 0 20px; }
                 }
-            </style>
+
+                /* Logs Table Styles */
+                .logs-container {
+                    background: rgba(15, 23, 42, 0.4);
+                    border-radius: 16px;
+                    border: 1px solid var(--card-border);
+                    overflow: hidden;
+                }
+                .logs-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 0.9rem;
+                }
+                .logs-table thead th {
+                    text-align: left;
+                    padding: 16px;
+                    background: rgba(255, 255, 255, 0.03);
+                    color: var(--text-muted);
+                    font-weight: 600;
+                    border-bottom: 1px solid var(--card-border);
+                    position: sticky;
+                    top: 0;
+                    backdrop-filter: blur(10px);
+                }
+                .logs-table tbody tr {
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+                    transition: background 0.2s;
+                }
+                .logs-table tbody tr:hover {
+                    background: rgba(255, 255, 255, 0.02);
+                }
+                .logs-table td {
+                    padding: 14px 16px;
+                    color: var(--text);
+                    vertical-align: top;
+                }
+                .log-time {
+                    font-family: 'Monaco', 'Consolas', monospace;
+                    font-size: 0.8rem;
+                    color: var(--text-dim);
+                    white-space: nowrap;
+                }
+                .log-device {
+                    font-weight: 500;
+                    color: var(--text);
+                }
+                .log-version {
+                    display: inline-block;
+                    padding: 2px 6px;
+                    background: rgba(59, 130, 246, 0.1);
+                    border: 1px solid rgba(59, 130, 246, 0.2);
+                    border-radius: 4px;
+                    color: var(--primary-light);
+                    font-size: 0.75rem;
+                    margin-top: 4px;
+                }
+                .log-event {
+                    color: var(--accent);
+                    font-weight: 600;
+                }
+                .log-params pre {
+                    margin: 0;
+                    font-family: 'Monaco', 'Consolas', monospace;
+                    font-size: 0.8rem;
+                    color: var(--text-muted);
+                    white-space: pre-wrap;
+                    max-height: 150px;
+                    overflow-y: auto;
+                }
+                .log-empty {
+                    padding: 40px !important;
+                    text-align: center;
+                    color: var(--text-dim);
+                    font-style: italic;
+                }
+                .refresh-spin { animation: spin 1s linear infinite; }
+                @keyframes spin { 100% { transform: rotate(360deg); } }
         </head>
         <body>
             <div class="container">
@@ -1141,6 +1247,10 @@ def index():
                             <button class="nav-item" id="navWebmGif" data-section="webm-gif">
                                 <span class="nav-icon">🎞️</span>
                                 <span>WebM → GIF</span>
+                            </button>
+                            <button class="nav-item" id="navAndroidLogs" data-section="android-logs">
+                                <span class="nav-icon">📱</span>
+                                <span>Android Logs</span>
                             </button>
                         </nav>
                     </div>
@@ -1525,6 +1635,48 @@ def index():
                             </div>
                         </div>
                     </div>
+
+                   <!-- Android Logs Section -->
+                    <div id="androidLogsSection" class="section-content hidden">
+                            <div class="feature-card" style="border:none; background:transparent; padding:0;">
+                                <div class="feature-title" style="margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <span style="font-size: 1.5rem;">📱</span>
+                                        <span style="font-size: 1.25rem;">Android Device Logs</span>
+                                    </div>
+                                    <div style="display:flex; gap:10px;">
+                                        <button id="refreshLogsBtn" style="width:auto; margin:0; padding: 8px 16px; font-size: 0.9rem;">
+                                            🔄 Refresh
+                                        </button>
+                                        <button id="clearLogsBtn" style="width:auto; margin:0; padding: 8px 16px; font-size: 0.9rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5;">
+                                            🗑️ Clear
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="logs-container">
+                                    <div style="overflow-x: auto; max-height: 70vh;">
+                                        <table class="logs-table">
+                                            <thead>
+                                                <tr>
+                                                    <th style="width: 160px;">Time</th>
+                                                    <th style="width: 200px;">Device</th>
+                                                    <th style="width: 200px;">Event</th>
+                                                    <th>Parameters</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="logsTableBody">
+                                                <tr>
+                                                    <td colspan="4" class="log-empty">No logs received yet.</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1713,6 +1865,7 @@ def index():
                     const batchResizeSection = document.getElementById('batchResizeSection');
                     const tgsGifSection = document.getElementById('tgsGifSection');
                     const webmGifSection = document.getElementById('webmGifSection');
+                    const androidLogsSection = document.getElementById('androidLogsSection');
 
                     const allSections = [
                         videoSection,
@@ -1723,7 +1876,8 @@ def index():
                         batchResizeSection,
                         batchResizeSection,
                         tgsGifSection,
-                        webmGifSection
+                        webmGifSection,
+                        androidLogsSection
                     ];
 
                     console.log('Navigation initialized. Nav items:', navItems.length);
@@ -1754,7 +1908,8 @@ def index():
                             'batch-convert': batchConvertSection,
                             'batch-resize': batchResizeSection,
                             'tgs-gif': tgsGifSection,
-                            'webm-gif': webmGifSection
+                            'webm-gif': webmGifSection,
+                            'android-logs': androidLogsSection
                         };
 
                         const targetSection = sectionMap[sectionName];
@@ -2215,6 +2370,72 @@ def index():
                         webmStatus.textContent = 'Lỗi: ' + err.message;
                     }
                 });
+                // Android Logs Logic
+                const logsTableBody = document.getElementById('logsTableBody');
+                const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+                const clearLogsBtn = document.getElementById('clearLogsBtn');
+
+                async function fetchLogs() {
+                    try {
+                        refreshLogsBtn.disabled = true;
+                        refreshLogsBtn.textContent = 'Refreshing...';
+                        const res = await fetch('/api/android-log');
+                        if (!res.ok) throw new Error(await res.text());
+                        const logs = await res.json();
+                        renderLogs(logs);
+                    } catch (err) {
+                        console.error(err);
+                        // Don't show toast for background refreshes unless crucial
+                    } finally {
+                        refreshLogsBtn.disabled = false;
+                        refreshLogsBtn.textContent = '🔄 Refresh';
+                    }
+                }
+
+                function renderLogs(logs) {
+                    if (!logs || logs.length === 0) {
+                        logsTableBody.innerHTML = '<tr><td colspan="4" class="log-empty">No logs received yet.</td></tr>';
+                        return;
+                    }
+                    // Show newest first
+                    logsTableBody.innerHTML = logs.slice().reverse().map(log => {
+                        const paramsStr = log.params && Object.keys(log.params).length > 0 
+                            ? JSON.stringify(log.params, null, 2) 
+                            : '<span style="color:var(--text-dim); font-style:italic;">No params</span>';
+                            
+                        const deviceName = log.deviceName || 'Unknown Device';
+                        const version = log.versionCode ? `v${log.versionCode}` : '';
+                        
+                        return `
+                            <tr>
+                                <td class="log-time">${log.timestamp}</td>
+                                <td>
+                                    <div class="log-device">${deviceName}</div>
+                                    ${version ? `<div class="log-version">${version}</div>` : ''}
+                                </td>
+                                <td class="log-event">${log.eventName}</td>
+                                <td class="log-params"><pre>${paramsStr}</pre></td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+
+                refreshLogsBtn.addEventListener('click', fetchLogs);
+                
+                clearLogsBtn.addEventListener('click', async () => {
+                    if(!confirm('Clear all logs?')) return;
+                    try {
+                        await fetch('/api/android-log', { method: 'DELETE' });
+                        fetchLogs();
+                    } catch(e) { console.error(e); }
+                });
+
+                // Auto-fetch when tab is active
+                document.getElementById('navAndroidLogs').addEventListener('click', fetchLogs);
+
+                // Initial fetch
+                fetchLogs();
+
             </script>
         </body>
         </html>
@@ -2313,6 +2534,92 @@ def serve_upload(filename: str):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.route("/api/android-log", methods=["GET", "POST", "DELETE"])
+def android_log():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        event_name = data.get("eventName", "Unknown")
+        device_name = data.get("deviceName", "Unknown Device")
+        version_code = str(data.get("versionCode", ""))
+        params_json = json.dumps(data.get("params", {}))
+
+        try:
+            conn = get_db_connection()
+            conn.execute(
+                'INSERT INTO logs (timestamp, event_name, device_name, version_code, params) VALUES (?, ?, ?, ?, ?)',
+                (timestamp, event_name, device_name, version_code, params_json)
+            )
+            conn.commit()
+            conn.close()
+            
+            # Return the entry for client confirmation (optional, simplified)
+            return jsonify({
+                "status": "logged", 
+                "entry": {
+                    "timestamp": timestamp,
+                    "eventName": event_name,
+                    "deviceName": device_name,
+                    "versionCode": version_code,
+                    "params": data.get("params", {})
+                }
+            })
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    elif request.method == "DELETE":
+        try:
+            conn = get_db_connection()
+            conn.execute('DELETE FROM logs')
+            conn.commit()
+            conn.close()
+            return jsonify({"status": "cleared"})
+        except Exception as e:
+             return jsonify({"status": "error", "message": str(e)}), 500
+
+    else:
+        # GET
+        try:
+            conn = get_db_connection()
+            # Get last 1000 logs
+            logs_db = conn.execute('SELECT * FROM logs ORDER BY id DESC LIMIT 1000').fetchall()
+            conn.close()
+            
+            logs = []
+            for row in logs_db:
+                logs.append({
+                    "timestamp": row["timestamp"],
+                    "eventName": row["event_name"],
+                    "deviceName": row["device_name"],
+                    "versionCode": row["version_code"],
+                    "params": json.loads(row["params"]) if row["params"] else {}
+                })
+            # Reverse to match previous behavior if needed, but UI handles slice().reverse()
+            # API returns newest first (DESC) so UI might not need reverse() if we wanted consistent order, 
+            # but let's send them and let UI handle display.
+            # Current UI does `slice().reverse()`, implying it expects Oldest -> Newest.
+            # Our SQL returns Newest -> Oldest. 
+            # So if UI reverses, it will show Oldest -> Newest at top? 
+            # Wait, UI: `logs.slice().reverse().map(...)`
+            # If API sends [New, Old], Reverse -> [Old, New]. Map renders Top=Old, Bottom=New.
+            # If we want Newest at Top, UI should NOT reverse, or API should send Oldest -> Newest.
+            # Ideally logs are usually appended. 
+            # Let's send Oldest -> Newest (ASC) from SQL to keep compatibility with existing UI logic `slice().reverse()` 
+            # which likely assumes appending array.
+            
+            # Re-query for ASC order to maintain compatibility with simple array append logic
+            # actually strict limit 1000 implies we want 1000 newest.
+            # So: Select * from (Select * form logs order by id DESC limit 1000) order by id ASC
+            
+            # To keep it simple and consistent with "ANDROID_LOGS.append", we should return list in chronological order.
+            logs.reverse() # created from DESC, so reverse makes it ASC (Chronological)
+            
+            return jsonify(logs)
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.post("/png-to-webp")
