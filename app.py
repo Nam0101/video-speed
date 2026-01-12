@@ -20,6 +20,7 @@ from flask import (
     render_template_string,
     request,
     send_file,
+    Response,
 )
 from werkzeug.exceptions import HTTPException
 
@@ -1656,8 +1657,37 @@ def index():
                                     </div>
                                 </div>
                                 
+                                <!-- Filter Controls -->
+                                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; padding: 16px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px solid var(--card-border);">
+                                    <div>
+                                        <label style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Device</label>
+                                        <input type="text" id="filterDevice" placeholder="Filter by device..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); font-size: 0.85rem;" />
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Event Name</label>
+                                        <input type="text" id="filterEvent" placeholder="Filter by event..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); font-size: 0.85rem;" />
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">From Date</label>
+                                        <input type="date" id="filterFromDate" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); font-size: 0.85rem;" />
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">To Date</label>
+                                        <input type="date" id="filterToDate" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); font-size: 0.85rem;" />
+                                    </div>
+                                </div>
+                                <div style="margin-bottom: 16px; display: flex; gap: 10px; align-items: center;">
+                                    <button id="applyFiltersBtn" style="width:auto; margin:0; padding: 8px 20px; font-size: 0.9rem;">
+                                        🔍 Apply Filters
+                                    </button>
+                                    <button id="clearFiltersBtn" style="width:auto; margin:0; padding: 8px 16px; font-size: 0.9rem; background: transparent; border: 1px solid var(--input-border); color: var(--text-muted);">
+                                        ✕ Clear Filters
+                                    </button>
+                                    <span id="logsCount" style="margin-left: auto; color: var(--text-dim); font-size: 0.85rem;"></span>
+                                </div>
+                                
                                 <div class="logs-container">
-                                    <div style="overflow-x: auto; max-height: 70vh;">
+                                    <div style="overflow-x: auto; max-height: 60vh;">
                                         <table class="logs-table">
                                             <thead>
                                                 <tr>
@@ -2375,6 +2405,15 @@ def index():
                 const logsTableBody = document.getElementById('logsTableBody');
                 const refreshLogsBtn = document.getElementById('refreshLogsBtn');
                 const clearLogsBtn = document.getElementById('clearLogsBtn');
+                const filterDevice = document.getElementById('filterDevice');
+                const filterEvent = document.getElementById('filterEvent');
+                const filterFromDate = document.getElementById('filterFromDate');
+                const filterToDate = document.getElementById('filterToDate');
+                const applyFiltersBtn = document.getElementById('applyFiltersBtn');
+                const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+                const logsCount = document.getElementById('logsCount');
+                
+                let allLogs = []; // Store all logs for filtering
 
                 async function fetchLogs() {
                     try {
@@ -2382,20 +2421,47 @@ def index():
                         refreshLogsBtn.textContent = 'Refreshing...';
                         const res = await fetch('/api/android-log');
                         if (!res.ok) throw new Error(await res.text());
-                        const logs = await res.json();
-                        renderLogs(logs);
+                        allLogs = await res.json();
+                        applyFilters();
                     } catch (err) {
                         console.error(err);
-                        // Don't show toast for background refreshes unless crucial
                     } finally {
                         refreshLogsBtn.disabled = false;
                         refreshLogsBtn.textContent = '🔄 Refresh';
                     }
                 }
+                
+                function applyFilters() {
+                    const deviceFilter = (filterDevice.value || '').toLowerCase().trim();
+                    const eventFilter = (filterEvent.value || '').toLowerCase().trim();
+                    const fromDate = filterFromDate.value ? new Date(filterFromDate.value) : null;
+                    const toDate = filterToDate.value ? new Date(filterToDate.value + 'T23:59:59') : null;
+                    
+                    let filtered = allLogs.filter(log => {
+                        // Device filter
+                        if (deviceFilter && !(log.deviceName || '').toLowerCase().includes(deviceFilter)) {
+                            return false;
+                        }
+                        // Event filter
+                        if (eventFilter && !(log.eventName || '').toLowerCase().includes(eventFilter)) {
+                            return false;
+                        }
+                        // Date filter
+                        if (fromDate || toDate) {
+                            const logDate = new Date(log.timestamp.replace(' ', 'T'));
+                            if (fromDate && logDate < fromDate) return false;
+                            if (toDate && logDate > toDate) return false;
+                        }
+                        return true;
+                    });
+                    
+                    renderLogs(filtered);
+                    logsCount.textContent = `Showing ${filtered.length} of ${allLogs.length} logs`;
+                }
 
                 function renderLogs(logs) {
                     if (!logs || logs.length === 0) {
-                        logsTableBody.innerHTML = '<tr><td colspan="4" class="log-empty">No logs received yet.</td></tr>';
+                        logsTableBody.innerHTML = '<tr><td colspan="4" class="log-empty">No logs match the filters.</td></tr>';
                         return;
                     }
                     // Show newest first
@@ -2420,6 +2486,23 @@ def index():
                         `;
                     }).join('');
                 }
+                
+                applyFiltersBtn.addEventListener('click', applyFilters);
+                
+                clearFiltersBtn.addEventListener('click', () => {
+                    filterDevice.value = '';
+                    filterEvent.value = '';
+                    filterFromDate.value = '';
+                    filterToDate.value = '';
+                    applyFilters();
+                });
+                
+                // Allow Enter key to apply filters
+                [filterDevice, filterEvent].forEach(input => {
+                    input.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') applyFilters();
+                    });
+                });
 
                 refreshLogsBtn.addEventListener('click', fetchLogs);
                 
@@ -2431,11 +2514,65 @@ def index():
                     } catch(e) { console.error(e); }
                 });
 
-                // Auto-fetch when tab is active
-                document.getElementById('navAndroidLogs').addEventListener('click', fetchLogs);
-
                 // Initial fetch
                 fetchLogs();
+                
+                // Real-time updates using Server-Sent Events
+                let eventSource = null;
+                
+                function startSSE() {
+                    if (eventSource) return;
+                    
+                    eventSource = new EventSource('/api/android-log/stream');
+                    
+                    eventSource.onmessage = (event) => {
+                        try {
+                            const log = JSON.parse(event.data);
+                            // Add to allLogs and re-render
+                            allLogs.push(log);
+                            // Keep only last 1000
+                            if (allLogs.length > 1000) {
+                                allLogs = allLogs.slice(-1000);
+                            }
+                            applyFilters();
+                        } catch(e) {
+                            // Ignore parse errors (heartbeats)
+                        }
+                    };
+                    
+                    eventSource.onerror = () => {
+                        stopSSE();
+                        // Reconnect after 3 seconds
+                        setTimeout(() => {
+                            const section = document.getElementById('androidLogsSection');
+                            if (section && !section.classList.contains('hidden')) {
+                                startSSE();
+                            }
+                        }, 3000);
+                    };
+                }
+                
+                function stopSSE() {
+                    if (eventSource) {
+                        eventSource.close();
+                        eventSource = null;
+                    }
+                }
+                
+                // Start SSE when on Android Logs tab
+                document.getElementById('navAndroidLogs').addEventListener('click', () => {
+                    fetchLogs();
+                    startSSE();
+                });
+                
+                // Stop SSE when switching to other tabs
+                document.querySelectorAll('.nav-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        if (item.id !== 'navAndroidLogs') {
+                            stopSSE();
+                        }
+                    });
+                });
 
             </script>
         </body>
@@ -2621,6 +2758,55 @@ def android_log():
             return jsonify(logs)
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/android-log/stream")
+def android_log_stream():
+    """Server-Sent Events endpoint for real-time log updates."""
+    def generate():
+        last_id = 0
+        while True:
+            try:
+                conn = get_db_connection()
+                # Get logs newer than last_id
+                logs_db = conn.execute(
+                    'SELECT * FROM logs WHERE id > ? ORDER BY id ASC LIMIT 50',
+                    (last_id,)
+                ).fetchall()
+                conn.close()
+                
+                if logs_db:
+                    for row in logs_db:
+                        last_id = row["id"]
+                        log_entry = {
+                            "timestamp": row["timestamp"],
+                            "eventName": row["event_name"],
+                            "deviceName": row["device_name"],
+                            "versionCode": row["version_code"],
+                            "params": json.loads(row["params"]) if row["params"] else {}
+                        }
+                        yield f"data: {json.dumps(log_entry)}\n\n"
+                else:
+                    # Send heartbeat to keep connection alive
+                    yield f": heartbeat\n\n"
+                    
+                import time
+                time.sleep(1)  # Check for new logs every second
+            except GeneratorExit:
+                break
+            except Exception as e:
+                print(f"SSE Error: {e}")
+                break
+    
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
 
 
 @app.post("/png-to-webp")
