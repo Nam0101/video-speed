@@ -1204,6 +1204,7 @@ def index():
                 }
                 .refresh-spin { animation: spin 1s linear infinite; }
                 @keyframes spin { 100% { transform: rotate(360deg); } }
+            </style>
         </head>
         <body>
             <div class="container">
