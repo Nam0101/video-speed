@@ -1205,6 +1205,70 @@ def index():
                 }
                 .refresh-spin { animation: spin 1s linear infinite; }
                 @keyframes spin { 100% { transform: rotate(360deg); } }
+                
+                /* Timber Log Styles */
+                .timber-console {
+                    background: #1a1a2e;
+                    border-radius: 12px;
+                    padding: 0;
+                    font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+                    font-size: 0.8rem;
+                    max-height: 70vh;
+                    overflow-y: auto;
+                    border: 1px solid var(--card-border);
+                }
+                .timber-line {
+                    padding: 6px 12px;
+                    border-bottom: 1px solid rgba(255,255,255,0.03);
+                    display: flex;
+                    gap: 12px;
+                    align-items: flex-start;
+                }
+                .timber-line:hover {
+                    background: rgba(255,255,255,0.02);
+                }
+                .timber-time {
+                    color: #6b7280;
+                    white-space: nowrap;
+                    flex-shrink: 0;
+                }
+                .timber-priority {
+                    font-weight: 700;
+                    padding: 1px 6px;
+                    border-radius: 3px;
+                    font-size: 0.7rem;
+                    flex-shrink: 0;
+                }
+                .timber-priority.V { background: #374151; color: #9ca3af; }
+                .timber-priority.D { background: #1e3a5f; color: #60a5fa; }
+                .timber-priority.I { background: #14532d; color: #4ade80; }
+                .timber-priority.W { background: #713f12; color: #fbbf24; }
+                .timber-priority.E { background: #7f1d1d; color: #f87171; }
+                .timber-priority.A { background: #581c87; color: #c084fc; }
+                .timber-tag {
+                    color: #a78bfa;
+                    font-weight: 600;
+                    flex-shrink: 0;
+                    max-width: 150px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .timber-msg {
+                    color: #e5e7eb;
+                    flex: 1;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                }
+                .timber-throwable {
+                    color: #f87171;
+                    font-size: 0.75rem;
+                    margin-top: 4px;
+                    padding: 8px;
+                    background: rgba(239, 68, 68, 0.1);
+                    border-radius: 4px;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                }
             </style>
         </head>
         <body>
@@ -1253,6 +1317,10 @@ def index():
                             <button class="nav-item" id="navAndroidLogs" data-section="android-logs">
                                 <span class="nav-icon">📱</span>
                                 <span>Android Logs</span>
+                            </button>
+                            <button class="nav-item" id="navTimberLogs" data-section="timber-logs">
+                                <span class="nav-icon">🌲</span>
+                                <span>Timber Logs</span>
                             </button>
                         </nav>
                     </div>
@@ -1708,6 +1776,71 @@ def index():
                             </div>
                         </div>
                     </div>
+                    
+                    <!-- Timber Logs Section -->
+                    <div id="timberLogsSection" class="section-content hidden">
+                        <div class="controls-panel" style="width: 100%; max-width: 100%; max-height: none;">
+                            <div class="feature-card" style="border:none; background:transparent; padding:0;">
+                                <div class="feature-title" style="margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <span style="font-size: 1.5rem;">🌲</span>
+                                        <span style="font-size: 1.25rem;">Timber Console</span>
+                                    </div>
+                                    <div style="display:flex; gap:10px;">
+                                        <button id="refreshTimberBtn" style="width:auto; margin:0; padding: 8px 16px; font-size: 0.9rem;">
+                                            🔄 Refresh
+                                        </button>
+                                        <button id="clearTimberBtn" style="width:auto; margin:0; padding: 8px 16px; font-size: 0.9rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5;">
+                                            🗑️ Clear
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Timber Filter Controls -->
+                                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; padding: 16px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px solid var(--card-border);">
+                                    <div>
+                                        <label style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Priority</label>
+                                        <select id="timberFilterPriority" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); font-size: 0.85rem;">
+                                            <option value="">All</option>
+                                            <option value="V">Verbose</option>
+                                            <option value="D">Debug</option>
+                                            <option value="I">Info</option>
+                                            <option value="W">Warning</option>
+                                            <option value="E">Error</option>
+                                            <option value="A">Assert</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Tag</label>
+                                        <input type="text" id="timberFilterTag" placeholder="Filter by tag..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); font-size: 0.85rem;" />
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Message</label>
+                                        <input type="text" id="timberFilterMsg" placeholder="Search message..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); font-size: 0.85rem;" />
+                                    </div>
+                                    <div style="display: flex; align-items: flex-end; gap: 8px;">
+                                        <button id="applyTimberFiltersBtn" style="flex:1; margin:0; padding: 8px 12px; font-size: 0.85rem;">
+                                            🔍 Filter
+                                        </button>
+                                        <button id="clearTimberFiltersBtn" style="width:auto; margin:0; padding: 8px 12px; font-size: 0.85rem; background: transparent; border: 1px solid var(--input-border); color: var(--text-muted);">
+                                            ✕
+                                        </button>
+                                    </div>
+                                </div>
+                                <div style="margin-bottom: 12px; display: flex; align-items: center;">
+                                    <span id="timberCount" style="color: var(--text-dim); font-size: 0.85rem;"></span>
+                                    <label style="margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 0.85rem;">
+                                        <input type="checkbox" id="timberAutoScroll" checked />
+                                        Auto-scroll
+                                    </label>
+                                </div>
+                                
+                                <div class="timber-console" id="timberConsole">
+                                    <div class="timber-line" style="color: var(--text-dim); justify-content: center; padding: 20px;">No Timber logs yet.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1897,6 +2030,7 @@ def index():
                     const tgsGifSection = document.getElementById('tgsGifSection');
                     const webmGifSection = document.getElementById('webmGifSection');
                     const androidLogsSection = document.getElementById('androidLogsSection');
+                    const timberLogsSection = document.getElementById('timberLogsSection');
 
                     const allSections = [
                         videoSection,
@@ -1905,10 +2039,10 @@ def index():
                         videoWebpSection,
                         batchConvertSection,
                         batchResizeSection,
-                        batchResizeSection,
                         tgsGifSection,
                         webmGifSection,
-                        androidLogsSection
+                        androidLogsSection,
+                        timberLogsSection
                     ];
 
                     console.log('Navigation initialized. Nav items:', navItems.length);
@@ -1940,7 +2074,8 @@ def index():
                             'batch-resize': batchResizeSection,
                             'tgs-gif': tgsGifSection,
                             'webm-gif': webmGifSection,
-                            'android-logs': androidLogsSection
+                            'android-logs': androidLogsSection,
+                            'timber-logs': timberLogsSection
                         };
 
                         const targetSection = sectionMap[sectionName];
@@ -2571,7 +2706,167 @@ def index():
                         if (item.id !== 'navAndroidLogs') {
                             stopSSE();
                         }
+                        if (item.id !== 'navTimberLogs') {
+                            stopTimberSSE();
+                        }
                     });
+                });
+                
+                // ==================== TIMBER LOGS LOGIC ====================
+                const timberConsole = document.getElementById('timberConsole');
+                const refreshTimberBtn = document.getElementById('refreshTimberBtn');
+                const clearTimberBtn = document.getElementById('clearTimberBtn');
+                const timberFilterPriority = document.getElementById('timberFilterPriority');
+                const timberFilterTag = document.getElementById('timberFilterTag');
+                const timberFilterMsg = document.getElementById('timberFilterMsg');
+                const applyTimberFiltersBtn = document.getElementById('applyTimberFiltersBtn');
+                const clearTimberFiltersBtn = document.getElementById('clearTimberFiltersBtn');
+                const timberCount = document.getElementById('timberCount');
+                const timberAutoScroll = document.getElementById('timberAutoScroll');
+                
+                let allTimberLogs = [];
+                let timberEventSource = null;
+                
+                async function fetchTimberLogs() {
+                    try {
+                        refreshTimberBtn.disabled = true;
+                        refreshTimberBtn.textContent = 'Refreshing...';
+                        const res = await fetch('/api/android-log');
+                        if (!res.ok) throw new Error(await res.text());
+                        const logs = await res.json();
+                        // Filter only timber_log events
+                        allTimberLogs = logs.filter(l => l.eventName === 'timber_log');
+                        applyTimberFilters();
+                    } catch (err) {
+                        console.error(err);
+                    } finally {
+                        refreshTimberBtn.disabled = false;
+                        refreshTimberBtn.textContent = '\ud83d\udd04 Refresh';
+                    }
+                }
+                
+                function applyTimberFilters() {
+                    const priorityFilter = timberFilterPriority.value;
+                    const tagFilter = (timberFilterTag.value || '').toLowerCase().trim();
+                    const msgFilter = (timberFilterMsg.value || '').toLowerCase().trim();
+                    
+                    let filtered = allTimberLogs.filter(log => {
+                        const params = log.params || {};
+                        if (priorityFilter && params.priority !== priorityFilter) return false;
+                        if (tagFilter && !(params.tag || '').toLowerCase().includes(tagFilter)) return false;
+                        if (msgFilter && !(params.message || '').toLowerCase().includes(msgFilter)) return false;
+                        return true;
+                    });
+                    
+                    renderTimberLogs(filtered);
+                    timberCount.textContent = `Showing ${filtered.length} of ${allTimberLogs.length} timber logs`;
+                }
+                
+                function escapeHtml(text) {
+                    if (!text) return '';
+                    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                }
+                
+                function renderTimberLogs(logs) {
+                    if (!logs || logs.length === 0) {
+                        timberConsole.innerHTML = '<div class="timber-line" style="color: var(--text-dim); justify-content: center; padding: 20px;">No Timber logs match the filters.</div>';
+                        return;
+                    }
+                    
+                    timberConsole.innerHTML = logs.map(log => {
+                        const params = log.params || {};
+                        const priority = params.priority || 'D';
+                        const tag = escapeHtml(params.tag || 'Unknown');
+                        const message = escapeHtml(params.message || '');
+                        const throwable = params.throwable ? escapeHtml(params.throwable) : null;
+                        const time = log.timestamp ? log.timestamp.split(' ')[1] || log.timestamp : '';
+                        
+                        return `
+                            <div class="timber-line">
+                                <span class="timber-time">${time}</span>
+                                <span class="timber-priority ${priority}">${priority}</span>
+                                <span class="timber-tag">${tag}</span>
+                                <div class="timber-msg">
+                                    ${message}
+                                    ${throwable ? `<div class="timber-throwable">${throwable}</div>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                    
+                    if (timberAutoScroll.checked) {
+                        timberConsole.scrollTop = timberConsole.scrollHeight;
+                    }
+                }
+                
+                function startTimberSSE() {
+                    if (timberEventSource) return;
+                    
+                    timberEventSource = new EventSource('/api/android-log/stream');
+                    
+                    timberEventSource.onmessage = (event) => {
+                        try {
+                            const log = JSON.parse(event.data);
+                            if (log.eventName === 'timber_log') {
+                                allTimberLogs.push(log);
+                                if (allTimberLogs.length > 1000) {
+                                    allTimberLogs = allTimberLogs.slice(-1000);
+                                }
+                                applyTimberFilters();
+                            }
+                        } catch(e) {}
+                    };
+                    
+                    timberEventSource.onerror = () => {
+                        stopTimberSSE();
+                        setTimeout(() => {
+                            const section = document.getElementById('timberLogsSection');
+                            if (section && !section.classList.contains('hidden')) {
+                                startTimberSSE();
+                            }
+                        }, 3000);
+                    };
+                }
+                
+                function stopTimberSSE() {
+                    if (timberEventSource) {
+                        timberEventSource.close();
+                        timberEventSource = null;
+                    }
+                }
+                
+                refreshTimberBtn.addEventListener('click', fetchTimberLogs);
+                
+                clearTimberBtn.addEventListener('click', async () => {
+                    if(!confirm('This will clear ALL logs (including Android events). Continue?')) return;
+                    try {
+                        await fetch('/api/android-log', { method: 'DELETE' });
+                        allTimberLogs = [];
+                        applyTimberFilters();
+                        fetchLogs(); // Also refresh Android logs
+                    } catch(e) { console.error(e); }
+                });
+                
+                applyTimberFiltersBtn.addEventListener('click', applyTimberFilters);
+                
+                clearTimberFiltersBtn.addEventListener('click', () => {
+                    timberFilterPriority.value = '';
+                    timberFilterTag.value = '';
+                    timberFilterMsg.value = '';
+                    applyTimberFilters();
+                });
+                
+                [timberFilterTag, timberFilterMsg].forEach(input => {
+                    input.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') applyTimberFilters();
+                    });
+                });
+                
+                timberFilterPriority.addEventListener('change', applyTimberFilters);
+                
+                document.getElementById('navTimberLogs').addEventListener('click', () => {
+                    fetchTimberLogs();
+                    startTimberSSE();
                 });
 
             </script>
