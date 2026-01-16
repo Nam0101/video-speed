@@ -8,3 +8,5 @@ venv/
 /data/
 *.mp4
 *.csv
+.shared/
+.agent/

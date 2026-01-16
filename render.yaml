@@ -1,7 +1,22 @@
 services:
   - type: web
-    name: video-speed
-    env: docker
+    name: video-speed-api
+    env: python
     plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
     healthCheckPath: /health
     autoDeploy: true
+
+  - type: web
+    name: video-speed-web
+    env: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start -- --port $PORT
+    autoDeploy: true
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://video-speed-api.onrender.com

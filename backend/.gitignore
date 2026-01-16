@@ -1,0 +1,10 @@
+# runtime data and uploads
+/data/
+
+# python caches
+__pycache__/
+*.pyc
+
+# env files
+.env
+.env.*
