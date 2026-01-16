@@ -53,10 +53,7 @@ export default function MonitorLoginClient() {
       }
 
       setStatus("success");
-      setMessage("Đăng nhập thành công. Đang chuyển hướng...");
-      setTimeout(() => {
-        router.replace(from);
-      }, 450);
+      setMessage("Đăng nhập thành công. Nhấn tiếp tục để vào trang.");
     } catch (err) {
       setStatus("error");
       setMessage(err instanceof Error ? err.message : "Có lỗi xảy ra.");
@@ -191,6 +188,16 @@ export default function MonitorLoginClient() {
                   <span>{message}</span>
                 </div>
               </div>
+            )}
+
+            {status === "success" && (
+              <button
+                type="button"
+                onClick={() => router.replace(from)}
+                className="mt-4 w-full rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5"
+              >
+                Tiếp tục vào trang
+              </button>
             )}
           </section>
         </main>
