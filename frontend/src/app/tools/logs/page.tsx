@@ -7,21 +7,17 @@ import {
   ArrowLeft,
   ChevronDown,
   Filter,
+  Pause,
+  Play,
   RefreshCw,
   Search,
+  Smartphone,
   Trash2,
+  Wifi,
   X,
+  Zap,
 } from "lucide-react";
 import { apiClient, Log } from "@/lib/api-client";
-
-const formatDateTime = (value: string) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("vi-VN", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(date);
-};
 
 const formatTime = (value: string) => {
   const date = new Date(value);
@@ -31,6 +27,19 @@ const formatTime = (value: string) => {
     minute: "2-digit",
     second: "2-digit",
   }).format(date);
+};
+
+// Event color mappings for visual variety
+const getEventColor = (eventName: string) => {
+  const colors: Record<string, { bg: string; text: string; glow: string }> = {
+    splash_view: { bg: "bg-violet-500/20", text: "text-violet-400", glow: "shadow-violet-500/20" },
+    home_view: { bg: "bg-blue-500/20", text: "text-blue-400", glow: "shadow-blue-500/20" },
+    result_diagnose_solution_view: { bg: "bg-emerald-500/20", text: "text-emerald-400", glow: "shadow-emerald-500/20" },
+    result_diagnose_preventions_view: { bg: "bg-amber-500/20", text: "text-amber-400", glow: "shadow-amber-500/20" },
+    result_diagnose_reasons_view: { bg: "bg-rose-500/20", text: "text-rose-400", glow: "shadow-rose-500/20" },
+    scan_view: { bg: "bg-cyan-500/20", text: "text-cyan-400", glow: "shadow-cyan-500/20" },
+  };
+  return colors[eventName] || { bg: "bg-slate-700", text: "text-slate-300", glow: "" };
 };
 
 export default function LogsPage() {
@@ -157,216 +166,227 @@ export default function LogsPage() {
   const hasActiveFilters = searchQuery || selectedDevice || selectedEvent || selectedVersion;
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6">
-      {/* Header */}
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/tools"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-slate-300 ring-1 ring-slate-700 transition hover:bg-slate-700"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-white">Live Monitor</h1>
-            <p className="text-sm text-slate-400">Android event logs</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      {/* Background decorations */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
+      </div>
+
+      <div className="relative z-10 max-w-7xl mx-auto p-4 md:p-6">
+        {/* Header */}
+        <header className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-4">
+            <Link
+              href="/tools"
+              className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all duration-200 hover:scale-105"
+            >
+              <ArrowLeft className="w-5 h-5 text-slate-400" />
+            </Link>
+            <div>
+              <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                <Wifi className="w-6 h-6 text-cyan-400" />
+                Live Monitor
+              </h1>
+              <p className="text-sm text-slate-500">Android event logs</p>
+            </div>
           </div>
-        </div>
-        <button
-          onClick={() => setStreaming((p) => !p)}
-          className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${streaming
-              ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30"
-              : "bg-slate-800 text-slate-300 ring-1 ring-slate-700 hover:bg-slate-700"
-            }`}
-        >
-          <span
-            className={`h-2 w-2 rounded-full ${streaming ? "bg-white animate-pulse" : "bg-slate-500"
+
+          {/* Live toggle */}
+          <button
+            onClick={() => setStreaming((p) => !p)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all duration-300 ${streaming
+                ? "bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/25"
+                : "bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"
               }`}
-          />
-          {streaming ? "Live" : "Paused"}
-        </button>
-      </header>
+          >
+            {streaming ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                <Pause className="w-4 h-4" />
+                Live
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4" />
+                Paused
+              </>
+            )}
+          </button>
+        </header>
 
-      {/* Stats */}
-      <div className="mt-6 flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-4 rounded-lg bg-slate-900 px-4 py-3 ring-1 ring-slate-800">
-          <div className="text-center px-2">
-            <p className="text-2xl font-bold text-cyan-400">{stats.total}</p>
-            <p className="text-xs text-slate-500">Total</p>
-          </div>
-          <div className="h-8 w-px bg-slate-700" />
-          <div className="text-center px-2">
-            <p className="text-2xl font-bold text-violet-400">{stats.devices}</p>
-            <p className="text-xs text-slate-500">Devices</p>
-          </div>
-          <div className="h-8 w-px bg-slate-700" />
-          <div className="text-center px-2">
-            <p className="text-2xl font-bold text-amber-400">{stats.events}</p>
-            <p className="text-xs text-slate-500">Events</p>
-          </div>
-          {hasActiveFilters && (
-            <>
-              <div className="h-8 w-px bg-slate-700" />
-              <div className="text-center px-2">
-                <p className="text-2xl font-bold text-emerald-400">{stats.filtered}</p>
-                <p className="text-xs text-slate-500">Filtered</p>
-              </div>
-            </>
-          )}
-        </div>
-        <div className="flex-1" />
-        <button
-          onClick={fetchLogs}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
-        <button
-          onClick={handleClear}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-500 disabled:opacity-50"
-        >
-          <Trash2 className="h-4 w-4" />
-          Clear
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div className="mt-4 rounded-lg bg-slate-900 p-4 ring-1 ring-slate-800">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search..."
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 py-2 pl-10 pr-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-            />
-          </div>
-
-          <div className="relative">
-            <select
-              value={selectedDevice}
-              onChange={(e) => setSelectedDevice(e.target.value)}
-              className="appearance-none rounded-lg border border-slate-700 bg-slate-800 py-2 pl-3 pr-8 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
-            >
-              <option value="">All Devices</option>
-              {filterOptions.devices.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          </div>
-
-          <div className="relative">
-            <select
-              value={selectedEvent}
-              onChange={(e) => setSelectedEvent(e.target.value)}
-              className="appearance-none rounded-lg border border-slate-700 bg-slate-800 py-2 pl-3 pr-8 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
-            >
-              <option value="">All Events</option>
-              {filterOptions.events.map((e) => (
-                <option key={e} value={e}>{e}</option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          </div>
-
-          <div className="relative">
-            <select
-              value={selectedVersion}
-              onChange={(e) => setSelectedVersion(e.target.value)}
-              className="appearance-none rounded-lg border border-slate-700 bg-slate-800 py-2 pl-3 pr-8 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
-            >
-              <option value="">All Versions</option>
-              {filterOptions.versions.map((v) => (
-                <option key={v} value={v}>v{v}</option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          </div>
-
-          <div className="relative">
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value as "newest" | "oldest")}
-              className="appearance-none rounded-lg border border-slate-700 bg-slate-800 py-2 pl-3 pr-8 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
-            >
-              <option value="newest">Newest</option>
-              <option value="oldest">Oldest</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          </div>
-
-          {hasActiveFilters && (
-            <button
-              onClick={clearFilters}
-              className="inline-flex items-center gap-1 rounded-lg bg-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-600"
-            >
-              <X className="h-4 w-4" />
-              Clear
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Error */}
-      {(error || streamError) && (
-        <div className="mt-4 rounded-lg border border-rose-800 bg-rose-950 px-4 py-3 text-sm text-rose-300">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4" />
-            <span>{error || streamError}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Logs List */}
-      <div className="mt-4 space-y-2">
-        {loading && (
-          <div className="rounded-lg bg-slate-900 p-6 text-center text-slate-400 ring-1 ring-slate-800">
-            <RefreshCw className="mx-auto h-5 w-5 animate-spin" />
-            <p className="mt-2">Loading...</p>
-          </div>
-        )}
-
-        {!loading && filteredLogs.length === 0 && (
-          <div className="rounded-lg bg-slate-900 p-6 text-center text-slate-500 ring-1 ring-slate-800">
-            <Filter className="mx-auto h-5 w-5" />
-            <p className="mt-2">No logs found</p>
-          </div>
-        )}
-
-        {!loading &&
-          filteredLogs.map((log, index) => (
+        {/* Stats cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          {[
+            { label: "Total", value: stats.total, color: "from-cyan-500 to-blue-500", icon: Zap },
+            { label: "Devices", value: stats.devices, color: "from-violet-500 to-purple-500", icon: Smartphone },
+            { label: "Events", value: stats.events, color: "from-amber-500 to-orange-500", icon: Filter },
+            { label: "Filtered", value: stats.filtered, color: "from-emerald-500 to-teal-500", icon: Search },
+          ].map((stat) => (
             <div
-              key={`${log.timestamp}-${index}`}
-              className="rounded-lg bg-slate-900 p-4 ring-1 ring-slate-800 hover:ring-slate-700 transition"
+              key={stat.label}
+              className="relative overflow-hidden rounded-xl bg-white/5 border border-white/10 p-4 group hover:border-white/20 transition-all duration-200"
             >
-              {/* Top row: time, event, device, version */}
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                <span className="font-mono text-slate-500">{formatTime(log.timestamp)}</span>
-                <span className="rounded bg-cyan-900/50 px-2 py-0.5 text-xs font-medium text-cyan-300 ring-1 ring-cyan-800">
-                  {log.eventName}
-                </span>
-                <span className="text-slate-400">{log.deviceName}</span>
-                <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-                  v{log.versionCode}
-                </span>
-              </div>
-
-              {/* Params as formatted JSON */}
-              <div className="mt-3">
-                <pre className="overflow-x-auto rounded-md bg-slate-950 p-3 text-xs font-mono text-emerald-400 ring-1 ring-slate-800">
-                  {Object.keys(log.params || {}).length > 0
-                    ? JSON.stringify(log.params, null, 2)
-                    : "{ }"}
-                </pre>
+              <div className={`absolute inset-0 bg-gradient-to-br ${stat.color} opacity-0 group-hover:opacity-5 transition-opacity`} />
+              <div className="relative">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">{stat.label}</span>
+                  <stat.icon className="w-4 h-4 text-slate-600" />
+                </div>
+                <p className={`text-2xl font-bold bg-gradient-to-r ${stat.color} bg-clip-text text-transparent`}>
+                  {stat.value}
+                </p>
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Filters */}
+        <div className="rounded-xl bg-white/5 border border-white/10 p-4 mb-6 backdrop-blur-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search events, devices..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/25 transition-all"
+              />
+            </div>
+
+            {/* Dropdowns */}
+            {[
+              { value: selectedDevice, setter: setSelectedDevice, options: filterOptions.devices, label: "All Devices" },
+              { value: selectedEvent, setter: setSelectedEvent, options: filterOptions.events, label: "All Events" },
+              { value: selectedVersion, setter: setSelectedVersion, options: filterOptions.versions, label: "All Versions", prefix: "v" },
+            ].map((dropdown, i) => (
+              <div key={i} className="relative">
+                <select
+                  value={dropdown.value}
+                  onChange={(e) => dropdown.setter(e.target.value)}
+                  className="appearance-none pl-3 pr-8 py-2.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-sm focus:outline-none focus:border-cyan-500/50 cursor-pointer"
+                >
+                  <option value="">{dropdown.label}</option>
+                  {dropdown.options.map((opt) => (
+                    <option key={opt} value={opt}>{dropdown.prefix || ""}{opt}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+              </div>
+            ))}
+
+            {/* Sort */}
+            <div className="relative">
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as "newest" | "oldest")}
+                className="appearance-none pl-3 pr-8 py-2.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-sm focus:outline-none focus:border-cyan-500/50 cursor-pointer"
+              >
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+            </div>
+
+            {/* Actions */}
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 text-sm hover:bg-white/10 transition-all"
+              >
+                <X className="w-4 h-4" />
+                Clear
+              </button>
+            )}
+
+            <button
+              onClick={fetchLogs}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 text-white text-sm font-medium shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+
+            <button
+              onClick={handleClear}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-gradient-to-r from-rose-500 to-pink-500 text-white text-sm font-medium shadow-lg shadow-rose-500/25 hover:shadow-rose-500/40 transition-all disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {/* Error */}
+        {(error || streamError) && (
+          <div className="mb-6 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            {error || streamError}
+          </div>
+        )}
+
+        {/* Logs */}
+        <div className="space-y-3">
+          {loading && (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+              <RefreshCw className="w-8 h-8 animate-spin mb-3" />
+              <p>Loading logs...</p>
+            </div>
+          )}
+
+          {!loading && filteredLogs.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+              <Filter className="w-8 h-8 mb-3 opacity-50" />
+              <p>No logs found</p>
+            </div>
+          )}
+
+          {!loading &&
+            filteredLogs.map((log, index) => {
+              const eventColor = getEventColor(log.eventName);
+              const hasParams = log.params && Object.keys(log.params).length > 0;
+
+              return (
+                <div
+                  key={`${log.timestamp}-${index}`}
+                  className={`group relative overflow-hidden rounded-xl bg-white/[0.02] border border-white/5 hover:border-white/10 hover:bg-white/[0.04] transition-all duration-200 ${eventColor.glow ? `hover:shadow-lg ${eventColor.glow}` : ""}`}
+                >
+                  {/* Gradient accent line */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${eventColor.bg}`} />
+
+                  <div className="p-4 pl-5">
+                    {/* Top row */}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="font-mono text-sm text-slate-500">{formatTime(log.timestamp)}</span>
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${eventColor.bg} ${eventColor.text}`}>
+                        {log.eventName}
+                      </span>
+                      <span className="flex items-center gap-1.5 text-sm text-slate-400">
+                        <Smartphone className="w-3.5 h-3.5" />
+                        {log.deviceName}
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-white/5 text-xs text-slate-500">
+                        v{log.versionCode}
+                      </span>
+                    </div>
+
+                    {/* Params */}
+                    {hasParams && (
+                      <div className="mt-3">
+                        <pre className="p-3 rounded-lg bg-black/20 border border-white/5 text-xs font-mono text-emerald-400 overflow-x-auto">
+                          {JSON.stringify(log.params, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
