@@ -6,6 +6,7 @@ import {
   Layers,
   Sparkles,
   Video,
+  ArrowRight,
 } from "lucide-react";
 
 const tools = [
@@ -15,7 +16,7 @@ const tools = [
     href: "/tools/video-export",
     icon: Video,
     badge: "Export",
-    tone: "from-sky-500 via-blue-500 to-indigo-500",
+    tone: "from-blue-500 via-cyan-500 to-indigo-500",
   },
   {
     title: "Image to WebP",
@@ -23,7 +24,7 @@ const tools = [
     href: "/tools/image-webp",
     icon: ImageIcon,
     badge: "Image",
-    tone: "from-emerald-400 via-teal-400 to-sky-500",
+    tone: "from-emerald-400 via-teal-400 to-cyan-500",
   },
   {
     title: "Animated WebP Studio",
@@ -47,7 +48,7 @@ const tools = [
     href: "/tools/logs",
     icon: Activity,
     badge: "Realtime",
-    tone: "from-slate-700 via-slate-800 to-slate-900",
+    tone: "from-emerald-500 via-green-500 to-teal-500",
   },
   {
     title: "API Overview",
@@ -55,23 +56,23 @@ const tools = [
     href: "/tools/overview",
     icon: Layers,
     badge: "Guide",
-    tone: "from-cyan-500 via-sky-500 to-blue-500",
+    tone: "from-cyan-500 via-blue-500 to-violet-500",
   },
 ];
 
 export default function ToolsPage() {
   return (
-    <main className="mt-10 flex-1">
-      <header className="space-y-4">
-        <div className="inline-flex w-fit items-center gap-2 rounded-full bg-white/70 px-4 py-1 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 motion-safe:animate-fade-in">
-          <span className="h-2 w-2 rounded-full bg-gradient-to-r from-sky-500 to-orange-400 motion-safe:animate-pulse-soft" />
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-10">
+      <header className="space-y-4 animate-fade-in">
+        <div className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-800 px-4 py-1 text-xs font-semibold text-slate-300 ring-1 ring-slate-700">
+          <span className="h-2 w-2 rounded-full bg-gradient-to-r from-blue-500 to-orange-400 animate-pulse" />
           Tool Library
         </div>
         <div className="space-y-2">
-          <h1 className="text-4xl font-heading font-semibold text-slate-900 md:text-5xl">
+          <h1 className="text-4xl font-bold text-white md:text-5xl">
             Bộ công cụ chuyên sâu cho media pipeline.
           </h1>
-          <p className="max-w-2xl text-base text-slate-600 md:text-lg">
+          <p className="max-w-2xl text-base text-slate-400 md:text-lg">
             Mỗi trang là một workflow đầy đủ: upload, config, xử lý và tải về. Tối ưu
             cho creator, editor và đội vận hành.
           </p>
@@ -85,28 +86,37 @@ export default function ToolsPage() {
             <Link
               key={tool.title}
               href={tool.href}
-              style={{ animationDelay: `${index * 0.08}s` }}
-              className="group relative overflow-hidden rounded-3xl bg-white/80 p-5 shadow-sm ring-1 ring-slate-200 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg motion-safe:animate-fade-up"
+              style={{ animationDelay: `${index * 80}ms` }}
+              className="group relative overflow-hidden rounded-2xl bg-slate-900 p-5 ring-1 ring-slate-800 transition-all duration-300 hover:-translate-y-1 hover:ring-blue-500/50 hover-lift cursor-pointer animate-fade-up"
             >
+              {/* Gradient overlay */}
               <div
-                className={`absolute inset-x-0 top-0 h-[120px] bg-gradient-to-r ${tool.tone} opacity-10 transition-opacity duration-300 group-hover:opacity-20`}
+                className={`absolute inset-x-0 top-0 h-[120px] bg-gradient-to-r ${tool.tone} opacity-10 transition-opacity duration-300 group-hover:opacity-25`}
               />
-              <div className="relative z-10 flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-                <Icon className="h-5 w-5 text-slate-700" />
+
+              {/* Icon */}
+              <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-800 ring-1 ring-slate-700 transition group-hover:ring-blue-500/50">
+                <Icon className="h-6 w-6 text-slate-400 transition group-hover:text-blue-400" />
               </div>
-              <span className="relative z-10 mt-4 inline-flex w-fit rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-white">
+
+              {/* Badge */}
+              <span className="relative z-10 mt-4 inline-flex w-fit rounded-full bg-blue-500/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-400">
                 {tool.badge}
               </span>
-              <h2 className="relative z-10 mt-3 text-lg font-semibold text-slate-900">
+
+              {/* Title & Description */}
+              <h2 className="relative z-10 mt-3 text-lg font-semibold text-white">
                 {tool.title}
               </h2>
-              <p className="relative z-10 mt-2 text-sm text-slate-600">
+              <p className="relative z-10 mt-2 text-sm text-slate-500">
                 {tool.description}
               </p>
-              <div className="relative z-10 mt-4 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 transition group-hover:text-slate-900">
+
+              {/* CTA */}
+              <div className="relative z-10 mt-4 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 transition group-hover:text-blue-400">
                 Mở công cụ
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition group-hover:bg-slate-900 group-hover:text-white">
-                  →
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-slate-500 transition group-hover:bg-blue-500 group-hover:text-white">
+                  <ArrowRight className="h-3 w-3" />
                 </span>
               </div>
             </Link>
@@ -131,14 +141,24 @@ export default function ToolsPage() {
         ].map((item, index) => (
           <div
             key={item.title}
-            style={{ animationDelay: `${index * 0.12}s` }}
-            className="rounded-2xl bg-white/80 p-5 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200 motion-safe:animate-fade-up"
+            style={{ animationDelay: `${index * 120}ms` }}
+            className="card animate-fade-up"
           >
-            <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+            <p className="text-sm font-semibold text-white">{item.title}</p>
             <p className="mt-2 text-xs text-slate-500">{item.description}</p>
           </div>
         ))}
       </section>
+
+      {/* Back to home */}
+      <div className="mt-10 text-center">
+        <Link
+          href="/"
+          className="btn-secondary rounded-full cursor-pointer"
+        >
+          ← Về trang chủ
+        </Link>
+      </div>
     </main>
   );
 }
