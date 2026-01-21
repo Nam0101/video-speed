@@ -62,7 +62,7 @@ const tools = [
 
 export default function ToolsPage() {
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-10">
+    <main className="text-slate-100">
       <header className="space-y-4 animate-fade-in">
         <div className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-800 px-4 py-1 text-xs font-semibold text-slate-300 ring-1 ring-slate-700">
           <span className="h-2 w-2 rounded-full bg-gradient-to-r from-blue-500 to-orange-400 animate-pulse" />
