@@ -13,6 +13,7 @@ import {
   Search,
   Smartphone,
   ChevronDown,
+  Calendar,
 } from 'lucide-react';
 import { apiClient, TrackingItem, TrackingResponse } from '@/lib/api-client';
 
@@ -92,6 +93,8 @@ export default function TrackingPage() {
   const [functionFilter, setFunctionFilter] = useState('all');
   const [countryFilter, setCountryFilter] = useState('all');
   const [appVersionFilter, setAppVersionFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const fetchTracking = async () => {
     setLoading(true);
@@ -142,6 +145,21 @@ export default function TrackingPage() {
       if (functionFilter !== 'all' && item.function !== functionFilter) return false;
       if (countryFilter !== 'all' && item.country_code !== countryFilter) return false;
       if (appVersionFilter !== 'all' && item.app_version !== appVersionFilter) return false;
+
+      // Date filter
+      if (dateFrom || dateTo) {
+        const itemDate = new Date(item.date).getTime();
+        if (Number.isNaN(itemDate)) return false;
+        if (dateFrom) {
+          const fromDate = new Date(dateFrom).setHours(0, 0, 0, 0);
+          if (itemDate < fromDate) return false;
+        }
+        if (dateTo) {
+          const toDate = new Date(dateTo).setHours(23, 59, 59, 999);
+          if (itemDate > toDate) return false;
+        }
+      }
+
       if (!normalized) return true;
       const haystack = [item.device_id, item.result, item.app_version, item.country_code]
         .filter(Boolean)
@@ -149,7 +167,7 @@ export default function TrackingPage() {
         .toLowerCase();
       return haystack.includes(normalized);
     });
-  }, [versionedRecords, query, functionFilter, countryFilter, appVersionFilter]);
+  }, [versionedRecords, query, functionFilter, countryFilter, appVersionFilter, dateFrom, dateTo]);
 
   const stats = useMemo(() => {
     const total = versionedRecords.length;
@@ -166,7 +184,7 @@ export default function TrackingPage() {
   }, [versionedRecords]);
 
   const hasActiveFilters =
-    query.trim().length > 0 || functionFilter !== 'all' || countryFilter !== 'all' || appVersionFilter !== 'all';
+    query.trim().length > 0 || functionFilter !== 'all' || countryFilter !== 'all' || appVersionFilter !== 'all' || dateFrom || dateTo;
 
   const handleExportCsv = () => {
     const headers = ['date', 'function', 'result', 'is_plant_healthy', 'response_time_seconds', 'app_version', 'platform', 'device_id', 'country_code', 'image_url'];
@@ -250,22 +268,22 @@ export default function TrackingPage() {
               {pagination ? `${pagination.total} records` : 'Loading...'}
             </div>
           </div>
-          <div className="flex flex-wrap items-end gap-3">
+
+          {/* Row 1: Search + Dropdowns */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
             {/* Search */}
-            <div className="flex-1 min-w-[200px]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search device, result..."
-                  className="input pl-10"
-                />
-              </div>
+            <div className="relative lg:col-span-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search..."
+                className="input pl-10 w-full"
+              />
             </div>
             {/* Function */}
             <div className="relative">
-              <select value={functionFilter} onChange={(e) => setFunctionFilter(e.target.value)} className="input appearance-none pr-8">
+              <select value={functionFilter} onChange={(e) => setFunctionFilter(e.target.value)} className="input appearance-none pr-8 w-full">
                 <option value="all">All Functions</option>
                 {functions.map((f) => <option key={f} value={f}>{f} ({functionCounts.get(f) ?? 0})</option>)}
               </select>
@@ -273,7 +291,7 @@ export default function TrackingPage() {
             </div>
             {/* Version */}
             <div className="relative">
-              <select value={appVersionFilter} onChange={(e) => setAppVersionFilter(e.target.value)} className="input appearance-none pr-8">
+              <select value={appVersionFilter} onChange={(e) => setAppVersionFilter(e.target.value)} className="input appearance-none pr-8 w-full">
                 <option value="all">All Versions</option>
                 {appVersions.map((v) => <option key={v} value={v}>{v}</option>)}
               </select>
@@ -281,15 +299,42 @@ export default function TrackingPage() {
             </div>
             {/* Country */}
             <div className="relative">
-              <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)} className="input appearance-none pr-8">
+              <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)} className="input appearance-none pr-8 w-full">
                 <option value="all">All Countries</option>
                 {countries.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             </div>
+          </div>
+
+          {/* Row 2: Dates + Actions */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Date From */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">From:</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="input px-3 py-2"
+              />
+            </div>
+            {/* Date To */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">To:</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="input px-3 py-2"
+              />
+            </div>
+
+            <div className="flex-1" />
+
             {/* Reset */}
             <button
-              onClick={() => { setQuery(''); setFunctionFilter('all'); setCountryFilter('all'); setAppVersionFilter('all'); }}
+              onClick={() => { setQuery(''); setFunctionFilter('all'); setCountryFilter('all'); setAppVersionFilter('all'); setDateFrom(''); setDateTo(''); }}
               className="btn-secondary"
             >
               Reset
