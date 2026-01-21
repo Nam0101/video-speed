@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Activity,
   AlertCircle,
   ArrowLeft,
   ChevronDown,
@@ -28,7 +27,9 @@ const formatTime = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("vi-VN", {
-    timeStyle: "medium",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
   }).format(date);
 };
 
@@ -45,7 +46,6 @@ export default function LogsPage() {
   const [selectedEvent, setSelectedEvent] = useState<string>("");
   const [selectedVersion, setSelectedVersion] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
-  const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -97,13 +97,9 @@ export default function LogsPage() {
 
   const filteredLogs = useMemo(() => {
     let filtered = logs.filter((log) => {
-      // Device filter
       if (selectedDevice && log.deviceName !== selectedDevice) return false;
-      // Event filter
       if (selectedEvent && log.eventName !== selectedEvent) return false;
-      // Version filter
       if (selectedVersion && log.versionCode !== selectedVersion) return false;
-      // Search query
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const searchable = [
@@ -119,7 +115,6 @@ export default function LogsPage() {
       return true;
     });
 
-    // Sort
     filtered.sort((a, b) => {
       const aTime = new Date(a.timestamp).getTime();
       const bTime = new Date(b.timestamp).getTime();
@@ -140,7 +135,7 @@ export default function LogsPage() {
   }, [logs, filteredLogs]);
 
   const handleClear = async () => {
-    if (!confirm("Xóa tất cả logs? Hành động này không thể hoàn tác.")) return;
+    if (!confirm("Xóa tất cả logs?")) return;
     try {
       setLoading(true);
       await apiClient.clearLogs();
@@ -162,76 +157,68 @@ export default function LogsPage() {
   const hasActiveFilters = searchQuery || selectedDevice || selectedEvent || selectedVersion;
 
   return (
-    <main className="mt-6 flex-1 pb-10">
+    <main className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6">
       {/* Header */}
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link
             href="/tools"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/80 text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-white"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-slate-300 ring-1 ring-slate-700 transition hover:bg-slate-700"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <h1 className="text-2xl font-heading font-semibold text-slate-900">
-              Live Monitor
-            </h1>
-            <p className="text-sm text-slate-500">
-              Android event logs • Realtime tracking
-            </p>
+            <h1 className="text-2xl font-bold text-white">Live Monitor</h1>
+            <p className="text-sm text-slate-400">Android event logs</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setStreaming((p) => !p)}
-            className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${streaming
-                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
-                : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+        <button
+          onClick={() => setStreaming((p) => !p)}
+          className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${streaming
+              ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30"
+              : "bg-slate-800 text-slate-300 ring-1 ring-slate-700 hover:bg-slate-700"
+            }`}
+        >
+          <span
+            className={`h-2 w-2 rounded-full ${streaming ? "bg-white animate-pulse" : "bg-slate-500"
               }`}
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${streaming ? "bg-white animate-pulse" : "bg-slate-400"
-                }`}
-            />
-            {streaming ? "Live" : "Paused"}
-          </button>
-        </div>
+          />
+          {streaming ? "Live" : "Paused"}
+        </button>
       </header>
 
-      {/* Stats Bar */}
+      {/* Stats */}
       <div className="mt-6 flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-6 rounded-xl bg-white/80 px-5 py-3 shadow-sm ring-1 ring-slate-200">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
+        <div className="flex items-center gap-4 rounded-lg bg-slate-900 px-4 py-3 ring-1 ring-slate-800">
+          <div className="text-center px-2">
+            <p className="text-2xl font-bold text-cyan-400">{stats.total}</p>
             <p className="text-xs text-slate-500">Total</p>
           </div>
-          <div className="h-8 w-px bg-slate-200" />
-          <div className="text-center">
-            <p className="text-2xl font-bold text-indigo-600">{stats.devices}</p>
+          <div className="h-8 w-px bg-slate-700" />
+          <div className="text-center px-2">
+            <p className="text-2xl font-bold text-violet-400">{stats.devices}</p>
             <p className="text-xs text-slate-500">Devices</p>
           </div>
-          <div className="h-8 w-px bg-slate-200" />
-          <div className="text-center">
-            <p className="text-2xl font-bold text-amber-600">{stats.events}</p>
+          <div className="h-8 w-px bg-slate-700" />
+          <div className="text-center px-2">
+            <p className="text-2xl font-bold text-amber-400">{stats.events}</p>
             <p className="text-xs text-slate-500">Events</p>
           </div>
           {hasActiveFilters && (
             <>
-              <div className="h-8 w-px bg-slate-200" />
-              <div className="text-center">
-                <p className="text-2xl font-bold text-emerald-600">{stats.filtered}</p>
+              <div className="h-8 w-px bg-slate-700" />
+              <div className="text-center px-2">
+                <p className="text-2xl font-bold text-emerald-400">{stats.filtered}</p>
                 <p className="text-xs text-slate-500">Filtered</p>
               </div>
             </>
           )}
         </div>
-
         <div className="flex-1" />
-
         <button
           onClick={fetchLogs}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:opacity-50"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           Refresh
@@ -239,7 +226,7 @@ export default function LogsPage() {
         <button
           onClick={handleClear}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg bg-rose-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-rose-600 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-500 disabled:opacity-50"
         >
           <Trash2 className="h-4 w-4" />
           Clear
@@ -247,88 +234,76 @@ export default function LogsPage() {
       </div>
 
       {/* Filters */}
-      <div className="mt-4 rounded-xl bg-white/80 p-4 shadow-sm ring-1 ring-slate-200">
+      <div className="mt-4 rounded-lg bg-slate-900 p-4 ring-1 ring-slate-800">
         <div className="flex flex-wrap items-center gap-3">
-          {/* Search */}
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search events, devices, params..."
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-10 pr-4 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              placeholder="Search..."
+              className="w-full rounded-lg border border-slate-700 bg-slate-800 py-2 pl-10 pr-4 text-sm text-slate-200 placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
           </div>
 
-          {/* Device Filter */}
           <div className="relative">
             <select
               value={selectedDevice}
               onChange={(e) => setSelectedDevice(e.target.value)}
-              className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="appearance-none rounded-lg border border-slate-700 bg-slate-800 py-2 pl-3 pr-8 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
             >
               <option value="">All Devices</option>
               {filterOptions.devices.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
+                <option key={d} value={d}>{d}</option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           </div>
 
-          {/* Event Filter */}
           <div className="relative">
             <select
               value={selectedEvent}
               onChange={(e) => setSelectedEvent(e.target.value)}
-              className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="appearance-none rounded-lg border border-slate-700 bg-slate-800 py-2 pl-3 pr-8 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
             >
               <option value="">All Events</option>
               {filterOptions.events.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
+                <option key={e} value={e}>{e}</option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           </div>
 
-          {/* Version Filter */}
           <div className="relative">
             <select
               value={selectedVersion}
               onChange={(e) => setSelectedVersion(e.target.value)}
-              className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="appearance-none rounded-lg border border-slate-700 bg-slate-800 py-2 pl-3 pr-8 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
             >
               <option value="">All Versions</option>
               {filterOptions.versions.map((v) => (
-                <option key={v} value={v}>
-                  v{v}
-                </option>
+                <option key={v} value={v}>v{v}</option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           </div>
 
-          {/* Sort */}
           <div className="relative">
             <select
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value as "newest" | "oldest")}
-              className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="appearance-none rounded-lg border border-slate-700 bg-slate-800 py-2 pl-3 pr-8 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none"
             >
-              <option value="newest">Newest First</option>
-              <option value="oldest">Oldest First</option>
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
             </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           </div>
 
-          {/* Clear Filters */}
           {hasActiveFilters && (
             <button
               onClick={clearFilters}
-              className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-200"
+              className="inline-flex items-center gap-1 rounded-lg bg-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-600"
             >
               <X className="h-4 w-4" />
               Clear
@@ -337,9 +312,9 @@ export default function LogsPage() {
         </div>
       </div>
 
-      {/* Error Messages */}
+      {/* Error */}
       {(error || streamError) && (
-        <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="mt-4 rounded-lg border border-rose-800 bg-rose-950 px-4 py-3 text-sm text-rose-300">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4" />
             <span>{error || streamError}</span>
@@ -347,81 +322,50 @@ export default function LogsPage() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="mt-4 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Time</th>
-                <th className="px-4 py-3">Event</th>
-                <th className="px-4 py-3">Device</th>
-                <th className="px-4 py-3">Version</th>
-                <th className="px-4 py-3">Params</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
-                    <RefreshCw className="mx-auto h-5 w-5 animate-spin" />
-                    <p className="mt-2">Loading...</p>
-                  </td>
-                </tr>
-              )}
-              {!loading && filteredLogs.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
-                    <Filter className="mx-auto h-5 w-5" />
-                    <p className="mt-2">No logs found</p>
-                  </td>
-                </tr>
-              )}
-              {!loading &&
-                filteredLogs.map((log, index) => (
-                  <tr
-                    key={`${log.timestamp}-${index}`}
-                    onClick={() => setExpandedRow(expandedRow === index ? null : index)}
-                    className="cursor-pointer transition hover:bg-slate-50"
-                  >
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                      {formatTime(log.timestamp)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/20">
-                        {log.eventName}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">{log.deviceName}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                        v{log.versionCode}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {expandedRow === index ? (
-                        <div className="space-y-1">
-                          {Object.entries(log.params || {}).map(([key, value]) => (
-                            <div key={key} className="flex gap-2 text-xs">
-                              <span className="font-medium text-slate-700">{key}:</span>
-                              <span className="text-slate-500">{String(value)}</span>
-                            </div>
-                          ))}
-                          {Object.keys(log.params || {}).length === 0 && (
-                            <span className="text-xs text-slate-400">No params</span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400">
-                          {Object.keys(log.params || {}).length} params
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
+      {/* Logs List */}
+      <div className="mt-4 space-y-2">
+        {loading && (
+          <div className="rounded-lg bg-slate-900 p-6 text-center text-slate-400 ring-1 ring-slate-800">
+            <RefreshCw className="mx-auto h-5 w-5 animate-spin" />
+            <p className="mt-2">Loading...</p>
+          </div>
+        )}
+
+        {!loading && filteredLogs.length === 0 && (
+          <div className="rounded-lg bg-slate-900 p-6 text-center text-slate-500 ring-1 ring-slate-800">
+            <Filter className="mx-auto h-5 w-5" />
+            <p className="mt-2">No logs found</p>
+          </div>
+        )}
+
+        {!loading &&
+          filteredLogs.map((log, index) => (
+            <div
+              key={`${log.timestamp}-${index}`}
+              className="rounded-lg bg-slate-900 p-4 ring-1 ring-slate-800 hover:ring-slate-700 transition"
+            >
+              {/* Top row: time, event, device, version */}
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <span className="font-mono text-slate-500">{formatTime(log.timestamp)}</span>
+                <span className="rounded bg-cyan-900/50 px-2 py-0.5 text-xs font-medium text-cyan-300 ring-1 ring-cyan-800">
+                  {log.eventName}
+                </span>
+                <span className="text-slate-400">{log.deviceName}</span>
+                <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+                  v{log.versionCode}
+                </span>
+              </div>
+
+              {/* Params as formatted JSON */}
+              <div className="mt-3">
+                <pre className="overflow-x-auto rounded-md bg-slate-950 p-3 text-xs font-mono text-emerald-400 ring-1 ring-slate-800">
+                  {Object.keys(log.params || {}).length > 0
+                    ? JSON.stringify(log.params, null, 2)
+                    : "{ }"}
+                </pre>
+              </div>
+            </div>
+          ))}
       </div>
     </main>
   );
