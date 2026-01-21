@@ -14,6 +14,8 @@ import {
   Smartphone,
   ChevronDown,
   Calendar,
+  X,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { apiClient, TrackingItem, TrackingResponse } from '@/lib/api-client';
 
@@ -95,6 +97,7 @@ export default function TrackingPage() {
   const [appVersionFilter, setAppVersionFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const fetchTracking = async () => {
     setLoading(true);
@@ -361,19 +364,20 @@ export default function TrackingPage() {
                   <th className="px-4 py-3 text-left">Version</th>
                   <th className="px-4 py-3 text-left">Platform</th>
                   <th className="px-4 py-3 text-left">Country</th>
+                  <th className="px-4 py-3 text-left">Image</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {loading && (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                  <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                     <RefreshCw className="mx-auto h-5 w-5 animate-spin mb-2" />Loading...
                   </td></tr>
                 )}
                 {!loading && error && (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-rose-400">{error}</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-8 text-center text-rose-400">{error}</td></tr>
                 )}
                 {!loading && !error && filteredRecords.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No data found</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No data found</td></tr>
                 )}
                 {!loading && !error && filteredRecords.slice(0, 100).map((item, index) => {
                   const health = getHealthLabel(item.is_plant_healthy ?? null);
@@ -402,6 +406,28 @@ export default function TrackingPage() {
                         <span className={`rounded-md px-2 py-1 text-xs font-medium ${platform.tone}`}>{platform.label}</span>
                       </td>
                       <td className="px-4 py-3 text-slate-400">{item.country_code || '—'}</td>
+                      <td className="px-4 py-3">
+                        {item.image_url ? (
+                          <button
+                            onClick={() => setPreviewImage(item.image_url)}
+                            className="group relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 ring-1 ring-slate-700 hover:ring-blue-500 transition cursor-pointer"
+                          >
+                            <img
+                              src={item.image_url}
+                              alt="Preview"
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                              <ImageIcon className="w-4 h-4 text-white" />
+                            </div>
+                          </button>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -415,6 +441,29 @@ export default function TrackingPage() {
           )}
         </section>
       </div>
+
+      {/* Image Preview Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] animate-scale-in">
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute -top-12 right-0 p-2 text-white/70 hover:text-white transition"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img
+              src={previewImage}
+              alt="Full preview"
+              className="max-w-full max-h-[85vh] rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
