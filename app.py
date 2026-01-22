@@ -3673,6 +3673,287 @@ def tgs_to_gif_zip():
     )
 
 
+def _convert_tgs_to_webp(
+    input_path: Path,
+    *,
+    width: int | None = None,
+    fps: int = 30,
+    quality: int = 80,
+    output_path: Path | None = None,
+) -> Path:
+    """Convert TGS (Telegram sticker) to animated WebP.
+
+    TGS files are gzipped Lottie JSON animations.
+    We decompress, load as Lottie, export to GIF first, then convert to WebP.
+    """
+    if not HAS_LOTTIE:
+        abort(500, "Lottie library không được cài đặt. Cần cài đặt 'lottie'.")
+
+    if output_path is None:
+        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.webp"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # TGS files are gzipped Lottie JSON - first convert to GIF, then to WebP
+    try:
+        with gzip.open(input_path, 'rb') as f:
+            lottie_data = json.load(f)
+
+        # Parse Lottie animation
+        animation = objects.Animation.load(lottie_data)
+
+        # Map width to renderer DPI (96 is the base scale).
+        dpi = 96
+        if width:
+            scale = width / animation.width if animation.width else 1
+            dpi = max(1, int(round(96 * scale)))
+
+        # Map requested fps to skip_frames (renderer uses original frame rate).
+        skip_frames = 1
+        if fps and animation.frame_rate:
+            skip_frames = max(1, int(round(animation.frame_rate / fps)))
+
+        # Export to GIF first (temp file)
+        gif_path = output_path.parent / f"{uuid.uuid4().hex}_temp.gif"
+        export_gif(
+            animation,
+            str(gif_path),
+            dpi=dpi,
+            skip_frames=skip_frames,
+        )
+
+        # Convert GIF to animated WebP
+        vf = "format=rgba"
+        if width:
+            vf = f"scale={width}:-1:flags=lanczos,format=rgba"
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(gif_path),
+            "-vf",
+            vf,
+            "-an",
+            "-loop",
+            "0",
+            "-c:v",
+            "libwebp",
+            "-preset",
+            "default",
+            "-q:v",
+            str(quality),
+            "-compression_level",
+            "6",
+            str(output_path),
+        ]
+        _run_ffmpeg(cmd)
+        gif_path.unlink(missing_ok=True)
+
+        return output_path
+
+    except Exception as e:
+        abort(500, f"Lỗi chuyển đổi TGS sang WebP: {str(e)}")
+
+
+def _convert_webm_to_webp(
+    input_path: Path,
+    *,
+    fps: int = 15,
+    width: int | None = None,
+    quality: int = 80,
+    output_path: Path | None = None,
+) -> Path:
+    """Convert WebM video to animated WebP."""
+    if output_path is None:
+        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.webp"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    vf_parts = [f"fps={fps}"]
+    if width:
+        vf_parts.append(f"scale={width}:-1:flags=lanczos")
+    vf_parts.append("format=rgba")
+    vf = ",".join(vf_parts)
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_path),
+        "-vf",
+        vf,
+        "-an",
+        "-loop",
+        "0",
+        "-c:v",
+        "libwebp",
+        "-preset",
+        "default",
+        "-q:v",
+        str(quality),
+        "-compression_level",
+        "6",
+        str(output_path),
+    ]
+    _run_ffmpeg(cmd)
+    return output_path
+
+
+def _convert_gif_to_webp(
+    input_path: Path,
+    *,
+    width: int | None = None,
+    quality: int = 80,
+    output_path: Path | None = None,
+) -> Path:
+    """Convert GIF to animated WebP."""
+    if output_path is None:
+        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.webp"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    vf = "format=rgba"
+    if width:
+        vf = f"scale={width}:-1:flags=lanczos,format=rgba"
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_path),
+        "-vf",
+        vf,
+        "-an",
+        "-loop",
+        "0",
+        "-c:v",
+        "libwebp",
+        "-preset",
+        "default",
+        "-q:v",
+        str(quality),
+        "-compression_level",
+        "6",
+        str(output_path),
+    ]
+    _run_ffmpeg(cmd)
+    return output_path
+
+
+def _allowed_batch_to_webp_suffix(filename: str) -> str | None:
+    """Check if file extension is allowed for batch-to-webp conversion."""
+    suffix = (Path(filename).suffix or "").lower()
+    if suffix in {".tgs", ".webm", ".png", ".jpg", ".jpeg", ".gif"}:
+        return suffix
+    return None
+
+
+@app.post("/batch-to-webp-zip")
+def batch_to_webp_zip():
+    """Batch convert TGS/WebM/PNG/GIF files to WebP and return as ZIP."""
+    files = request.files.getlist("files")
+    if not files:
+        abort(400, "Thiếu danh sách file (files)")
+
+    # Optional parameters
+    width_raw = request.form.get("width")
+    width: int | None = None
+    if width_raw not in (None, "", "0"):
+        width = _validate_positive_int(width_raw, name="Width", min_value=16, max_value=4096)
+
+    fps_raw = request.form.get("fps")
+    fps: int = 15  # default FPS for animated
+    if fps_raw not in (None, "", "0"):
+        fps = _validate_positive_int(fps_raw, name="FPS", min_value=1, max_value=60)
+
+    quality_raw = request.form.get("quality")
+    quality: int = 80  # default quality
+    if quality_raw not in (None, "", "0"):
+        quality = _validate_positive_int(quality_raw, name="Quality", min_value=1, max_value=100)
+
+    # Create batch directory
+    batch_dir = OUTPUT_DIR / f"batch_to_webp_{uuid.uuid4().hex}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = batch_dir / "converted_webp.zip"
+
+    output_paths: list[Path] = []
+    try:
+        for index, f in enumerate(files, start=1):
+            if f.filename is None or f.filename == "":
+                continue
+
+            suffix = _allowed_batch_to_webp_suffix(f.filename)
+            if suffix is None:
+                abort(400, "Chỉ chấp nhận file .tgs, .webm, .png, .jpg, .jpeg, .gif")
+
+            # Save input file
+            input_path = batch_dir / f"input_{index:04d}{suffix}"
+            f.save(input_path)
+
+            # Generate output filename - keep original stem, change extension to .webp
+            output_name = _safe_zip_entry_name_with_ext(Path(f.filename).stem, index=index, ext=".webp")
+            output_path = batch_dir / output_name
+
+            # Convert based on file type
+            if suffix == ".tgs":
+                _convert_tgs_to_webp(
+                    input_path,
+                    width=width,
+                    fps=fps,
+                    quality=quality,
+                    output_path=output_path,
+                )
+            elif suffix == ".webm":
+                _convert_webm_to_webp(
+                    input_path,
+                    fps=fps,
+                    width=width,
+                    quality=quality,
+                    output_path=output_path,
+                )
+            elif suffix == ".gif":
+                _convert_gif_to_webp(
+                    input_path,
+                    width=width,
+                    quality=quality,
+                    output_path=output_path,
+                )
+            else:  # PNG, JPG, JPEG - static images
+                _convert_image_to_webp(
+                    input_path,
+                    lossless=(suffix == ".png"),
+                    output_path=output_path,
+                )
+
+            output_paths.append(output_path)
+
+        if not output_paths:
+            abort(400, "Không có file hợp lệ")
+
+        # Create ZIP file
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for output_path in output_paths:
+                zf.write(output_path, arcname=output_path.name)
+
+    except HTTPException:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        raise
+    except Exception as exc:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        abort(500, f"Lỗi chuyển đổi: {exc}")
+
+    # Cleanup after request
+    @after_this_request
+    def cleanup(response):  # type: ignore
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        return response
+
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"batch_to_webp_{len(output_paths)}.zip",
+    )
+
+
 @app.post("/batch-animated-resize-zip")
 def batch_animated_resize_zip():
     """Batch resize WebP/GIF (including animated) with optional width, height, and size control."""

@@ -96,6 +96,13 @@ export default function BatchPage() {
   const [webpResizeStatus, setWebpResizeStatus] = useState("");
   const [webpResizeProcessing, setWebpResizeProcessing] = useState(false);
 
+  const [batchToWebpFiles, setBatchToWebpFiles] = useState<File[]>([]);
+  const [batchToWebpWidth, setBatchToWebpWidth] = useState("");
+  const [batchToWebpFps, setBatchToWebpFps] = useState("");
+  const [batchToWebpQuality, setBatchToWebpQuality] = useState("");
+  const [batchToWebpStatus, setBatchToWebpStatus] = useState("");
+  const [batchToWebpProcessing, setBatchToWebpProcessing] = useState(false);
+
   const imagesZipSummary = useMemo(
     () => summarizeFiles(imagesZipFiles),
     [imagesZipFiles]
@@ -112,6 +119,10 @@ export default function BatchPage() {
   const webpResizeSummary = useMemo(
     () => summarizeFiles(webpResizeFiles),
     [webpResizeFiles]
+  );
+  const batchToWebpSummary = useMemo(
+    () => summarizeFiles(batchToWebpFiles),
+    [batchToWebpFiles]
   );
 
   const handleImagesZip = async () => {
@@ -245,6 +256,30 @@ export default function BatchPage() {
     }
   };
 
+  const handleBatchToWebp = async () => {
+    if (!batchToWebpFiles.length) {
+      setBatchToWebpStatus("error:Vui lòng chọn file.");
+      return;
+    }
+    try {
+      setBatchToWebpProcessing(true);
+      setBatchToWebpStatus("processing:Đang convert sang WebP...");
+      const blob = await apiClient.batchToWebpZip(batchToWebpFiles, {
+        width: parseOptionalNumber(batchToWebpWidth),
+        fps: parseOptionalNumber(batchToWebpFps),
+        quality: parseOptionalNumber(batchToWebpQuality),
+      });
+      downloadBlob(blob, `batch_to_webp_${batchToWebpFiles.length}.zip`);
+      setBatchToWebpStatus("success:ZIP WebP đã sẵn sàng.");
+    } catch (error) {
+      setBatchToWebpStatus(
+        `error:${error instanceof Error ? error.message : "Có lỗi xảy ra"}`
+      );
+    } finally {
+      setBatchToWebpProcessing(false);
+    }
+  };
+
   return (
     <main className="mt-10 flex-1">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -268,7 +303,7 @@ export default function BatchPage() {
           </div>
         </div>
         <span className="rounded-full bg-white/70 px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200">
-          Endpoints: /images-to-webp-zip · /images-convert-zip · /tgs-to-gif-zip · /batch-animated-resize-zip · /webp-resize-zip
+          Endpoints: /images-to-webp-zip · /images-convert-zip · /tgs-to-gif-zip · /batch-to-webp-zip · /batch-animated-resize-zip · /webp-resize-zip
         </span>
       </header>
 
@@ -740,6 +775,99 @@ export default function BatchPage() {
             </button>
             <div className="mt-4">
               <StatusNotice status={webpResizeStatus} />
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                  Universal → WebP
+                </p>
+                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                  TGS/WebM/PNG/GIF → WebP
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Chuyển nhiều file sang WebP và tải ZIP.
+                </p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
+                <Sparkles className="h-5 w-5" />
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <input
+                type="file"
+                accept=".tgs,.webm,.png,.jpg,.jpeg,.gif"
+                multiple
+                onChange={(event) =>
+                  setBatchToWebpFiles(Array.from(event.target.files || []))
+                }
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-violet-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-violet-600"
+              />
+              <div className="text-xs text-slate-500">{batchToWebpSummary}</div>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  Width
+                </label>
+                <input
+                  type="number"
+                  min="16"
+                  max="4096"
+                  placeholder="Auto"
+                  value={batchToWebpWidth}
+                  onChange={(event) => setBatchToWebpWidth(event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  FPS (animated)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="60"
+                  placeholder="15"
+                  value={batchToWebpFps}
+                  onChange={(event) => setBatchToWebpFps(event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  Quality
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  placeholder="80"
+                  value={batchToWebpQuality}
+                  onChange={(event) => setBatchToWebpQuality(event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleBatchToWebp}
+              disabled={batchToWebpProcessing || !batchToWebpFiles.length}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {batchToWebpProcessing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Convert → WebP ZIP
+            </button>
+            <div className="mt-4">
+              <StatusNotice status={batchToWebpStatus} />
             </div>
           </div>
         </div>

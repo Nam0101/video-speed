@@ -332,6 +332,32 @@ class APIClient {
         return response.blob();
     }
 
+    async batchToWebpZip(
+        files: File[],
+        options: {
+            width?: number;
+            fps?: number;
+            quality?: number;
+        }
+    ): Promise<Blob> {
+        const formData = new FormData();
+        files.forEach((file) => formData.append('files', file));
+        if (options.width) formData.append('width', options.width.toString());
+        if (options.fps) formData.append('fps', options.fps.toString());
+        if (options.quality) formData.append('quality', options.quality.toString());
+
+        const response = await fetch(`${this.baseURL}/batch-to-webp-zip`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        return response.blob();
+    }
+
     async getTracking(page = 1, limit = 100): Promise<TrackingResponse> {
         const response = await fetch(
             `${ANALYTICS_BASE_URL}/api/analytics/v1/tracking?page=${page}&limit=${limit}`,
