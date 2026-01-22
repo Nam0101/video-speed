@@ -3848,7 +3848,9 @@ def _allowed_batch_to_webp_suffix(filename: str) -> str | None:
 
 @app.post("/batch-to-webp-zip")
 def batch_to_webp_zip():
-    """Batch convert TGS/WebM/PNG/GIF files to WebP and return as ZIP."""
+    """Batch convert TGS/WebM/PNG/GIF files to WebP and return as ZIP.
+    Also supports uploading ZIP files containing these file types.
+    """
     files = request.files.getlist("files")
     if not files:
         abort(400, "Thiếu danh sách file (files)")
@@ -3873,6 +3875,11 @@ def batch_to_webp_zip():
     batch_dir = OUTPUT_DIR / f"batch_to_webp_{uuid.uuid4().hex}"
     batch_dir.mkdir(parents=True, exist_ok=True)
     zip_path = batch_dir / "converted_webp.zip"
+    extract_dir = batch_dir / "extracted"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    # Collect all files to process (including files extracted from ZIPs)
+    files_to_process: list[tuple[Path, str]] = []  # (path, original_name)
 
     output_paths: list[Path] = []
     try:
@@ -3880,16 +3887,39 @@ def batch_to_webp_zip():
             if f.filename is None or f.filename == "":
                 continue
 
-            suffix = _allowed_batch_to_webp_suffix(f.filename)
-            if suffix is None:
-                abort(400, "Chỉ chấp nhận file .tgs, .webm, .png, .jpg, .jpeg, .gif")
+            # Check if it's a ZIP file
+            if f.filename.lower().endswith(".zip"):
+                # Save and extract ZIP
+                zip_input_path = batch_dir / f"input_zip_{index:04d}.zip"
+                f.save(zip_input_path)
+                try:
+                    with zipfile.ZipFile(zip_input_path, "r") as zf:
+                        for zip_member in zf.namelist():
+                            # Skip directories and hidden files
+                            if zip_member.endswith("/") or zip_member.startswith("__MACOSX"):
+                                continue
+                            member_filename = Path(zip_member).name
+                            suffix = _allowed_batch_to_webp_suffix(member_filename)
+                            if suffix:
+                                extracted_path = extract_dir / f"z{index}_{uuid.uuid4().hex[:8]}{suffix}"
+                                with zf.open(zip_member) as source, open(extracted_path, "wb") as target:
+                                    target.write(source.read())
+                                files_to_process.append((extracted_path, member_filename))
+                except zipfile.BadZipFile:
+                    continue  # Skip invalid ZIP files
+            else:
+                suffix = _allowed_batch_to_webp_suffix(f.filename)
+                if suffix is None:
+                    continue  # Skip unsupported files instead of aborting
 
-            # Save input file
-            input_path = batch_dir / f"input_{index:04d}{suffix}"
-            f.save(input_path)
+                input_path = batch_dir / f"input_{index:04d}{suffix}"
+                f.save(input_path)
+                files_to_process.append((input_path, f.filename))
 
-            # Generate output filename - keep original stem, change extension to .webp
-            output_name = _safe_zip_entry_name_with_ext(Path(f.filename).stem, index=index, ext=".webp")
+        # Process all collected files
+        for idx, (input_path, original_name) in enumerate(files_to_process, start=1):
+            suffix = input_path.suffix.lower()
+            output_name = _safe_zip_entry_name_with_ext(Path(original_name).stem, index=idx, ext=".webp")
             output_path = batch_dir / output_name
 
             # Convert based on file type
