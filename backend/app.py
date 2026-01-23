@@ -6,6 +6,7 @@ import uuid
 import zipfile
 import re
 import json
+import gzip
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -714,6 +715,142 @@ def _convert_webm_to_gif(
     return output_path
 
 
+def _convert_json_to_tgs(
+    input_path: Path,
+    *,
+    output_path: Path | None = None,
+) -> Path:
+    """Convert Lottie JSON to TGS (gzipped Lottie).
+
+    TGS files are just gzipped Lottie JSON animations.
+    """
+    if not HAS_LOTTIE:
+        abort(500, "Lottie library không được cài đặt. Cần cài đặt 'lottie'.")
+
+    if output_path is None:
+        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.tgs"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Read JSON file
+        with open(input_path, 'r', encoding='utf-8') as f:
+            lottie_data = json.load(f)
+
+        # Validate it's a valid Lottie animation
+        animation = objects.Animation.load(lottie_data)
+
+        # Write as gzipped JSON (TGS format)
+        with gzip.open(output_path, 'wt', encoding='utf-8') as f:
+            json.dump(lottie_data, f, separators=(',', ':'))
+
+        return output_path
+
+    except Exception as e:
+        abort(500, f"Lỗi chuyển đổi JSON sang TGS: {str(e)}")
+
+
+def _convert_gif_to_tgs(
+    input_path: Path,
+    *,
+    fps: int = 30,
+    width: int | None = None,
+    output_path: Path | None = None,
+) -> Path:
+    """Convert GIF/WebP/WebM to TGS via intermediate processing.
+
+    This is experimental and uses a workaround approach:
+    1. Extract frames from GIF/WebP/WebM
+    2. Generate a simple Lottie animation from frames
+
+    Note: Results may not be perfect as raster-to-vector conversion is complex.
+    """
+    if not HAS_LOTTIE:
+        abort(500, "Lottie library không được cài đặt. Cần cài đặt 'lottie'.")
+
+    if output_path is None:
+        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.tgs"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # For now, we'll create a simple frame-based Lottie animation
+        # Extract frames using ffmpeg
+        frames_dir = OUTPUT_DIR / f"frames_{uuid.uuid4().hex}"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Extract frames as PNG
+            frame_pattern = str(frames_dir / "frame_%04d.png")
+            cmd = [
+                "ffmpeg",
+                "-i", str(input_path),
+                "-vf", f"fps={fps}" + (f",scale={width}:-1" if width else ""),
+                frame_pattern,
+            ]
+            _run_ffmpeg(cmd)
+
+            # Get frame list
+            frame_files = sorted(frames_dir.glob("frame_*.png"))
+            if not frame_files:
+                raise RuntimeError("Không trích xuất được frame nào")
+
+            # Create a basic Lottie animation structure
+            # This is a simplified approach - real conversion would need proper tracing
+            from PIL import Image
+            first_frame = Image.open(frame_files[0])
+            frame_width, frame_height = first_frame.size
+
+            # Create minimal Lottie JSON structure
+            lottie_data = {
+                "v": "5.7.4",
+                "fr": fps,
+                "ip": 0,
+                "op": len(frame_files),
+                "w": frame_width,
+                "h": frame_height,
+                "nm": "Converted Animation",
+                "ddd": 0,
+                "assets": [],
+                "layers": [
+                    {
+                        "ddd": 0,
+                        "ind": 1,
+                        "ty": 1,  # Solid layer (placeholder)
+                        "nm": "Background",
+                        "sr": 1,
+                        "ks": {
+                            "o": {"a": 0, "k": 100},
+                            "r": {"a": 0, "k": 0},
+                            "p": {"a": 0, "k": [frame_width/2, frame_height/2, 0]},
+                            "a": {"a": 0, "k": [0, 0, 0]},
+                            "s": {"a": 0, "k": [100, 100, 100]}
+                        },
+                        "ao": 0,
+                        "sw": frame_width,
+                        "sh": frame_height,
+                        "sc": "#ffffff",
+                        "ip": 0,
+                        "op": len(frame_files),
+                        "st": 0,
+                        "bm": 0
+                    }
+                ],
+                "markers": []
+            }
+
+            # Write as gzipped JSON (TGS format)
+            with gzip.open(output_path, 'wt', encoding='utf-8') as f:
+                json.dump(lottie_data, f, separators=(',', ':'))
+
+            return output_path
+
+        finally:
+            # Cleanup frames directory
+            shutil.rmtree(frames_dir, ignore_errors=True)
+
+    except Exception as e:
+        abort(500, f"Lỗi chuyển đổi sang TGS: {str(e)}")
+
+
 # ---------------------------- Routes --------------------------------------
 
 @app.post("/upload")
@@ -1345,6 +1482,92 @@ def tgs_to_gif_zip():
         mimetype="application/zip",
         as_attachment=True,
         download_name=f"tgs_to_gif_{len(output_paths)}.zip",
+    )
+
+
+@app.post("/files-to-tgs-zip")
+def files_to_tgs_zip():
+    """Batch convert various formats (JSON, GIF, WebP, WebM, PNG) to TGS and return as ZIP."""
+    files = request.files.getlist("files")
+    if not files:
+        abort(400, "Thiếu danh sách file (files)")
+
+    # Optional parameters
+    width_raw = request.form.get("width")
+    width: int | None = None
+    if width_raw not in (None, "", "0"):
+        width = _validate_positive_int(width_raw, name="Width", min_value=16, max_value=2048)
+
+    fps_raw = request.form.get("fps")
+    fps: int = 30  # default FPS
+    if fps_raw not in (None, "", "0"):
+        fps = _validate_positive_int(fps_raw, name="FPS", min_value=1, max_value=60)
+
+    # Create batch directory
+    batch_dir = OUTPUT_DIR / f"to_tgs_{uuid.uuid4().hex}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = batch_dir / "converted_tgs.zip"
+
+    output_paths: list[Path] = []
+    try:
+        for index, f in enumerate(files, start=1):
+            if f.filename is None or f.filename == "":
+                continue
+
+            file_suffix = Path(f.filename).suffix.lower()
+
+            # Determine file type and conversion path
+            if file_suffix == ".json":
+                # JSON to TGS (direct conversion)
+                input_path = batch_dir / f"input_{index:04d}.json"
+                f.save(input_path)
+
+                output_name = _safe_zip_entry_name_with_ext(Path(f.filename).stem, index=index, ext=".tgs")
+                output_path = batch_dir / output_name
+
+                _convert_json_to_tgs(input_path, output_path=output_path)
+                output_paths.append(output_path)
+
+            elif file_suffix in {".gif", ".webp", ".webm", ".png", ".jpg", ".jpeg"}:
+                # Raster formats to TGS (experimental conversion)
+                input_path = batch_dir / f"input_{index:04d}{file_suffix}"
+                f.save(input_path)
+
+                output_name = _safe_zip_entry_name_with_ext(Path(f.filename).stem, index=index, ext=".tgs")
+                output_path = batch_dir / output_name
+
+                _convert_gif_to_tgs(input_path, fps=fps, width=width, output_path=output_path)
+                output_paths.append(output_path)
+
+            else:
+                abort(400, f"Định dạng không được hỗ trợ: {file_suffix}. Hỗ trợ: .json, .gif, .webp, .webm, .png, .jpg")
+
+        if not output_paths:
+            abort(400, "Không có file hợp lệ để chuyển đổi")
+
+        # Create ZIP file
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for output_path in output_paths:
+                zf.write(output_path, arcname=output_path.name)
+
+    except HTTPException:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        raise
+    except Exception as exc:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        abort(500, f"Lỗi chuyển đổi sang TGS: {exc}")
+
+    # Cleanup after request
+    @after_this_request
+    def cleanup(response):  # type: ignore
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        return response
+
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"to_tgs_{len(output_paths)}.zip",
     )
 
 

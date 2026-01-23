@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 const ANALYTICS_BASE_URL =
     (process.env.NEXT_PUBLIC_ANALYTICS_URL || 'https://plant.cemsoftwareltd.com').replace(
         /\/$/,
@@ -261,6 +261,30 @@ class APIClient {
         if (options.fps) formData.append('fps', options.fps.toString());
 
         const response = await fetch(`${this.baseURL}/tgs-to-gif-zip`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        return response.blob();
+    }
+
+    async filesToTgsZip(
+        files: File[],
+        options: {
+            width?: number;
+            fps?: number;
+        }
+    ): Promise<Blob> {
+        const formData = new FormData();
+        files.forEach((file) => formData.append('files', file));
+        if (options.width) formData.append('width', options.width.toString());
+        if (options.fps) formData.append('fps', options.fps.toString());
+
+        const response = await fetch(`${this.baseURL}/files-to-tgs-zip`, {
             method: 'POST',
             body: formData,
         });

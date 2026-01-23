@@ -103,6 +103,12 @@ export default function BatchPage() {
   const [batchToWebpStatus, setBatchToWebpStatus] = useState("");
   const [batchToWebpProcessing, setBatchToWebpProcessing] = useState(false);
 
+  const [toTgsFiles, setToTgsFiles] = useState<File[]>([]);
+  const [toTgsWidth, setToTgsWidth] = useState("");
+  const [toTgsFps, setToTgsFps] = useState("");
+  const [toTgsStatus, setToTgsStatus] = useState("");
+  const [toTgsProcessing, setToTgsProcessing] = useState(false);
+
   const imagesZipSummary = useMemo(
     () => summarizeFiles(imagesZipFiles),
     [imagesZipFiles]
@@ -123,6 +129,10 @@ export default function BatchPage() {
   const batchToWebpSummary = useMemo(
     () => summarizeFiles(batchToWebpFiles),
     [batchToWebpFiles]
+  );
+  const toTgsSummary = useMemo(
+    () => summarizeFiles(toTgsFiles),
+    [toTgsFiles]
   );
 
   const handleImagesZip = async () => {
@@ -280,6 +290,29 @@ export default function BatchPage() {
     }
   };
 
+  const handleFilesToTgs = async () => {
+    if (!toTgsFiles.length) {
+      setToTgsStatus("error:Vui lòng chọn file.");
+      return;
+    }
+    try {
+      setToTgsProcessing(true);
+      setToTgsStatus("processing:Đang chuyển sang TGS...");
+      const blob = await apiClient.filesToTgsZip(toTgsFiles, {
+        width: parseOptionalNumber(toTgsWidth),
+        fps: parseOptionalNumber(toTgsFps),
+      });
+      downloadBlob(blob, `to_tgs_${toTgsFiles.length}.zip`);
+      setToTgsStatus("success:ZIP TGS đã sẵn sàng.");
+    } catch (error) {
+      setToTgsStatus(
+        `error:${error instanceof Error ? error.message : "Có lỗi xảy ra"}`
+      );
+    } finally {
+      setToTgsProcessing(false);
+    }
+  };
+
   return (
     <main className="mt-10 flex-1">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -303,7 +336,7 @@ export default function BatchPage() {
           </div>
         </div>
         <span className="rounded-full bg-white/70 px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200">
-          Endpoints: /images-to-webp-zip · /images-convert-zip · /tgs-to-gif-zip · /batch-to-webp-zip · /batch-animated-resize-zip · /webp-resize-zip
+          Endpoints: /images-to-webp-zip · /images-convert-zip · /tgs-to-gif-zip · /files-to-tgs-zip · /batch-to-webp-zip · /batch-animated-resize-zip · /webp-resize-zip
         </span>
       </header>
 
@@ -557,6 +590,85 @@ export default function BatchPage() {
             </button>
             <div className="mt-4">
               <StatusNotice status={tgsStatus} />
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                  Files → TGS
+                </p>
+                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                  Chuyển sang TGS
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Chuyển JSON/GIF/WebP/WebM/PNG sang TGS (Telegram Sticker).
+                </p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-pink-100 text-pink-600">
+                <Sparkles className="h-5 w-5" />
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <input
+                type="file"
+                accept=".json,.gif,.webp,.webm,.png,.jpg,.jpeg"
+                multiple
+                onChange={(event) =>
+                  setToTgsFiles(Array.from(event.target.files || []))
+                }
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-pink-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-pink-600"
+              />
+              <div className="text-xs text-slate-500">{toTgsSummary}</div>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  Width
+                </label>
+                <input
+                  type="number"
+                  min="16"
+                  max="2048"
+                  placeholder="Auto"
+                  value={toTgsWidth}
+                  onChange={(event) => setToTgsWidth(event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  FPS (animated)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="60"
+                  placeholder="30"
+                  value={toTgsFps}
+                  onChange={(event) => setToTgsFps(event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleFilesToTgs}
+              disabled={toTgsProcessing || !toTgsFiles.length}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-pink-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {toTgsProcessing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Convert → TGS ZIP
+            </button>
+            <div className="mt-4">
+              <StatusNotice status={toTgsStatus} />
             </div>
           </div>
 
