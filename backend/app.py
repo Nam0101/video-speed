@@ -1798,6 +1798,150 @@ def webm_to_gif():
     )
 
 
+@app.post("/batch-to-webp-zip")
+def batch_to_webp_zip():
+    """Universal batch converter: TGS, WebM, PNG, JPG, GIF, ZIP → WebP ZIP.
+    
+    Accepts multiple files and/or ZIP archives containing these file types.
+    Returns a ZIP with all files converted to WebP format.
+    """
+    files = request.files.getlist("files")
+    if not files:
+        abort(400, "Thiếu danh sách file (files)")
+
+    # Optional parameters
+    width_raw = request.form.get("width")
+    width: int | None = None
+    if width_raw not in (None, "", "0"):
+        width = _validate_positive_int(width_raw, name="Width", min_value=16, max_value=4096)
+
+    fps_raw = request.form.get("fps")
+    fps: int = 15  # default FPS for animated
+    if fps_raw not in (None, "", "0"):
+        fps = _validate_positive_int(fps_raw, name="FPS", min_value=1, max_value=60)
+
+    quality_raw = request.form.get("quality")
+    quality: int = 80  # default quality
+    if quality_raw not in (None, "", "0"):
+        quality = _validate_positive_int(quality_raw, name="Quality", min_value=1, max_value=100)
+
+    batch_dir = OUTPUT_DIR / f"batch_webp_{uuid.uuid4().hex}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = batch_dir / "converted_webp.zip"
+
+    SUPPORTED_EXTENSIONS = {".tgs", ".webm", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+    def process_single_file(input_path: Path, original_name: str, index: int) -> Path | None:
+        """Process a single file and return output path or None if unsupported."""
+        suffix = input_path.suffix.lower()
+        output_name = _safe_zip_entry_name(Path(original_name).stem, index=index)
+        output_path = batch_dir / output_name
+
+        try:
+            if suffix == ".tgs":
+                # TGS → animated WebP (via GIF intermediate)
+                if HAS_LOTTIE:
+                    gif_path = batch_dir / f"temp_{index}.gif"
+                    _convert_tgs_to_gif(input_path, width=width, fps=fps, output_path=gif_path)
+                    _convert_video_to_animated_webp(gif_path, fps=fps, width=width, loop=0, output_path=output_path)
+                    gif_path.unlink(missing_ok=True)
+                else:
+                    return None
+            elif suffix == ".webm":
+                # WebM → animated WebP
+                _convert_video_to_animated_webp(input_path, fps=fps, width=width, loop=0, output_path=output_path)
+            elif suffix == ".gif":
+                # GIF → animated WebP
+                _convert_video_to_animated_webp(input_path, fps=fps, width=width, loop=0, output_path=output_path)
+            elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+                # Static image → WebP
+                _convert_image_to_webp(input_path, lossless=(suffix == ".png"), quality=quality, width=width, output_path=output_path)
+            else:
+                return None
+            return output_path
+        except Exception:
+            return None
+
+    output_paths: list[Path] = []
+    file_index = 0
+
+    try:
+        for f in files:
+            if f.filename is None or f.filename == "":
+                continue
+
+            suffix = Path(f.filename).suffix.lower()
+
+            if suffix == ".zip":
+                # Handle ZIP file - extract and process contents
+                zip_input = batch_dir / f"input_{uuid.uuid4().hex}.zip"
+                f.save(zip_input)
+                
+                extract_dir = batch_dir / f"extract_{uuid.uuid4().hex}"
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                
+                try:
+                    with zipfile.ZipFile(zip_input, "r") as zf:
+                        for member in zf.namelist():
+                            if member.endswith("/"):  # Skip directories
+                                continue
+                            member_suffix = Path(member).suffix.lower()
+                            if member_suffix not in SUPPORTED_EXTENSIONS:
+                                continue
+                            
+                            # Extract file
+                            extracted = extract_dir / Path(member).name
+                            with zf.open(member) as src, open(extracted, "wb") as dst:
+                                dst.write(src.read())
+                            
+                            file_index += 1
+                            result = process_single_file(extracted, Path(member).name, file_index)
+                            if result:
+                                output_paths.append(result)
+                            extracted.unlink(missing_ok=True)
+                finally:
+                    shutil.rmtree(extract_dir, ignore_errors=True)
+                    zip_input.unlink(missing_ok=True)
+            
+            elif suffix in SUPPORTED_EXTENSIONS:
+                # Direct file processing
+                input_path = batch_dir / f"input_{uuid.uuid4().hex}{suffix}"
+                f.save(input_path)
+                
+                file_index += 1
+                result = process_single_file(input_path, f.filename, file_index)
+                if result:
+                    output_paths.append(result)
+                input_path.unlink(missing_ok=True)
+
+        if not output_paths:
+            abort(400, "Không có file hợp lệ")
+
+        # Create output ZIP
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for output_path in output_paths:
+                zf.write(output_path, arcname=output_path.name)
+
+    except HTTPException:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        raise
+    except Exception as exc:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        abort(500, f"Lỗi chuyển đổi: {exc}")
+
+    @after_this_request
+    def cleanup(response):
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        return response
+
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"batch_webp_{len(output_paths)}.zip",
+    )
+
+
 # ---------------------------- Analytics Dashboard -------------------------
 
 @app.get("/analytics")
