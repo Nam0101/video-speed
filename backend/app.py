@@ -39,6 +39,15 @@ OUTPUT_DIR = DATA_DIR / "converted"
 for directory in (UPLOAD_DIR, OUTPUT_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
+# Auto-detect ffmpeg path (works on Mac/Homebrew and Linux)
+FFMPEG_PATH = shutil.which("ffmpeg") or FFMPEG_PATH
+if not Path(FFMPEG_PATH).exists():
+    # Fallback paths
+    for path in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", FFMPEG_PATH]:
+        if Path(path).exists():
+            FFMPEG_PATH = path
+            break
+
 MIN_FPS = 1
 MAX_FPS = 60
 MAX_DURATION = 3600
@@ -48,6 +57,7 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend
 
 DB_PATH = DATA_DIR / "logs.db"
+
 
 def get_db_connection():
     """Create and return a database connection."""
@@ -298,7 +308,7 @@ def _convert_image(
         min_quality = 10
 
         for q in range(best_quality, min_quality - 1, -5):
-            cmd: list[str] = ["/usr/bin/ffmpeg", "-y", "-i", str(input_path)]
+            cmd: list[str] = [FFMPEG_PATH, "-y", "-i", str(input_path)]
             if vf:
                 cmd += ["-vf", vf]
 
@@ -330,7 +340,7 @@ def _convert_image(
         return output_path
 
     # Standard conversion without size constraint
-    cmd: list[str] = ["/usr/bin/ffmpeg", "-y", "-i", str(input_path)]
+    cmd: list[str] = [FFMPEG_PATH, "-y", "-i", str(input_path)]
     if vf:
         cmd += ["-vf", vf]
 
@@ -365,7 +375,7 @@ def _convert_video(
     input_path: Path, fps: int, duration: int | None = None, loop: bool = False
 ) -> Path:
     output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.mp4"
-    cmd = ["/usr/bin/ffmpeg", "-y"]
+    cmd = [FFMPEG_PATH, "-y"]
     if loop and duration:
         cmd += ["-stream_loop", "-1"]  # loop source to satisfy target duration
     cmd += [
@@ -409,7 +419,7 @@ def _convert_image_to_webp(
         output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.webp"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "/usr/bin/ffmpeg",
+        FFMPEG_PATH,
         "-y",
         "-i",
         str(input_path),
@@ -459,7 +469,7 @@ def _convert_images_to_animated_webp(
     vf = ",".join(vf_parts)
 
     cmd = [
-        "/usr/bin/ffmpeg",
+        FFMPEG_PATH,
         "-y",
         "-f",
         "concat",
@@ -507,7 +517,7 @@ def _convert_video_to_animated_webp(
     vf_parts.append("format=rgba")
     vf = ",".join(vf_parts)
 
-    cmd: list[str] = ["/usr/bin/ffmpeg", "-y", "-i", str(input_path)]
+    cmd: list[str] = [FFMPEG_PATH, "-y", "-i", str(input_path)]
     if duration:
         cmd += ["-t", str(duration)]
     cmd += [
@@ -565,7 +575,7 @@ def _resize_animated_media(
         min_quality = 10
 
         for q in range(best_quality, min_quality - 1, -5):
-            cmd: list[str] = ["/usr/bin/ffmpeg", "-y", "-i", str(input_path)]
+            cmd: list[str] = [FFMPEG_PATH, "-y", "-i", str(input_path)]
 
             if vf_parts:
                 vf_parts_copy = vf_parts.copy()
@@ -598,7 +608,7 @@ def _resize_animated_media(
         return output_path
 
     # Standard conversion without size constraint
-    cmd: list[str] = ["/usr/bin/ffmpeg", "-y", "-i", str(input_path)]
+    cmd: list[str] = [FFMPEG_PATH, "-y", "-i", str(input_path)]
 
     if vf_parts:
         if suffix == ".webp":
@@ -703,7 +713,7 @@ def _convert_webm_to_gif(
     vf = f"fps={fps},scale={width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
 
     cmd = [
-        "/usr/bin/ffmpeg",
+        FFMPEG_PATH,
         "-y",
         "-i",
         str(input_path),
@@ -781,7 +791,7 @@ def _convert_gif_to_tgs(
             # Extract frames as PNG
             frame_pattern = str(frames_dir / "frame_%04d.png")
             cmd = [
-                "/usr/bin/ffmpeg",
+                FFMPEG_PATH,
                 "-i", str(input_path),
                 "-vf", f"fps={fps}" + (f",scale={width}:-1" if width else ""),
                 frame_pattern,
