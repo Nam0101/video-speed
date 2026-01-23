@@ -83,6 +83,6 @@ jobs:
       - name: Verify Deployment
         run: |
           sleep 5
-          curl -sf https://video-speed.160.250.136.70.nip.io/api/health || echo "⚠️ Backend health check failed"
+          curl -sf https://video-speed.160.250.136.70.nip.io/health || echo "⚠️ Backend health check failed"
           curl -sf https://video-speed.160.250.136.70.nip.io/ || echo "⚠️ Frontend check failed"
           echo "🎉 Deployment complete!"
