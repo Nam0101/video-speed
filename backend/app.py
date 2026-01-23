@@ -1500,10 +1500,47 @@ def tgs_to_gif_zip():
 
 @app.post("/files-to-tgs-zip")
 def files_to_tgs_zip():
-    """Batch convert various formats (JSON, GIF, WebP, WebM, PNG) to TGS and return as ZIP."""
+    """Batch convert various formats (JSON, GIF, WebP, WebM, PNG) to TGS and return as ZIP.
+    
+    Also accepts a .zip file containing source files - they will be extracted and converted.
+    """
     files = request.files.getlist("files")
     if not files:
         abort(400, "Thiếu danh sách file (files)")
+    
+    # Check if the uploaded file is a zip file that needs extraction
+    extracted_files: list[Path] = []
+    temp_extract_dir: Path | None = None
+    
+    # If single file is a zip, extract it first
+    if len(files) == 1 and files[0].filename and files[0].filename.lower().endswith('.zip'):
+        temp_extract_dir = OUTPUT_DIR / f"extract_{uuid.uuid4().hex}"
+        temp_extract_dir.mkdir(parents=True, exist_ok=True)
+        
+        zip_upload_path = temp_extract_dir / "uploaded.zip"
+        files[0].save(zip_upload_path)
+        
+        try:
+            with zipfile.ZipFile(zip_upload_path, 'r') as zf:
+                for member in zf.namelist():
+                    # Skip directories and hidden files
+                    if member.endswith('/') or member.startswith('__MACOSX') or '/.' in member:
+                        continue
+                    member_suffix = Path(member).suffix.lower()
+                    if member_suffix in {'.json', '.gif', '.webp', '.webm', '.png', '.jpg', '.jpeg'}:
+                        # Extract to temp directory with safe name
+                        extracted_filename = Path(member).name
+                        extracted_path = temp_extract_dir / extracted_filename
+                        with zf.open(member) as source, open(extracted_path, 'wb') as target:
+                            shutil.copyfileobj(source, target)
+                        extracted_files.append(extracted_path)
+        except zipfile.BadZipFile:
+            shutil.rmtree(temp_extract_dir, ignore_errors=True)
+            abort(400, "File ZIP không hợp lệ")
+        
+        if not extracted_files:
+            shutil.rmtree(temp_extract_dir, ignore_errors=True)
+            abort(400, "File ZIP không chứa file hợp lệ (.json, .gif, .webp, .webm, .png, .jpg)")
 
     # Optional parameters
     width_raw = request.form.get("width")
@@ -1523,37 +1560,56 @@ def files_to_tgs_zip():
 
     output_paths: list[Path] = []
     try:
-        for index, f in enumerate(files, start=1):
-            if f.filename is None or f.filename == "":
-                continue
+        # Process files - either from extracted zip or direct uploads
+        if extracted_files:
+            # Processing extracted files from uploaded zip
+            for index, file_path in enumerate(extracted_files, start=1):
+                file_suffix = file_path.suffix.lower()
+                filename_stem = file_path.stem
 
-            file_suffix = Path(f.filename).suffix.lower()
+                if file_suffix == ".json":
+                    output_name = _safe_zip_entry_name_with_ext(filename_stem, index=index, ext=".tgs")
+                    output_path = batch_dir / output_name
+                    _convert_json_to_tgs(file_path, output_path=output_path)
+                    output_paths.append(output_path)
+                elif file_suffix in {".gif", ".webp", ".webm", ".png", ".jpg", ".jpeg"}:
+                    output_name = _safe_zip_entry_name_with_ext(filename_stem, index=index, ext=".tgs")
+                    output_path = batch_dir / output_name
+                    _convert_gif_to_tgs(file_path, fps=fps, width=width, output_path=output_path)
+                    output_paths.append(output_path)
+        else:
+            # Processing regular file uploads
+            for index, f in enumerate(files, start=1):
+                if f.filename is None or f.filename == "":
+                    continue
 
-            # Determine file type and conversion path
-            if file_suffix == ".json":
-                # JSON to TGS (direct conversion)
-                input_path = batch_dir / f"input_{index:04d}.json"
-                f.save(input_path)
+                file_suffix = Path(f.filename).suffix.lower()
 
-                output_name = _safe_zip_entry_name_with_ext(Path(f.filename).stem, index=index, ext=".tgs")
-                output_path = batch_dir / output_name
+                # Determine file type and conversion path
+                if file_suffix == ".json":
+                    # JSON to TGS (direct conversion)
+                    input_path = batch_dir / f"input_{index:04d}.json"
+                    f.save(input_path)
 
-                _convert_json_to_tgs(input_path, output_path=output_path)
-                output_paths.append(output_path)
+                    output_name = _safe_zip_entry_name_with_ext(Path(f.filename).stem, index=index, ext=".tgs")
+                    output_path = batch_dir / output_name
 
-            elif file_suffix in {".gif", ".webp", ".webm", ".png", ".jpg", ".jpeg"}:
-                # Raster formats to TGS (experimental conversion)
-                input_path = batch_dir / f"input_{index:04d}{file_suffix}"
-                f.save(input_path)
+                    _convert_json_to_tgs(input_path, output_path=output_path)
+                    output_paths.append(output_path)
 
-                output_name = _safe_zip_entry_name_with_ext(Path(f.filename).stem, index=index, ext=".tgs")
-                output_path = batch_dir / output_name
+                elif file_suffix in {".gif", ".webp", ".webm", ".png", ".jpg", ".jpeg"}:
+                    # Raster formats to TGS (experimental conversion)
+                    input_path = batch_dir / f"input_{index:04d}{file_suffix}"
+                    f.save(input_path)
 
-                _convert_gif_to_tgs(input_path, fps=fps, width=width, output_path=output_path)
-                output_paths.append(output_path)
+                    output_name = _safe_zip_entry_name_with_ext(Path(f.filename).stem, index=index, ext=".tgs")
+                    output_path = batch_dir / output_name
 
-            else:
-                abort(400, f"Định dạng không được hỗ trợ: {file_suffix}. Hỗ trợ: .json, .gif, .webp, .webm, .png, .jpg")
+                    _convert_gif_to_tgs(input_path, fps=fps, width=width, output_path=output_path)
+                    output_paths.append(output_path)
+
+                else:
+                    abort(400, f"Định dạng không được hỗ trợ: {file_suffix}. Hỗ trợ: .json, .gif, .webp, .webm, .png, .jpg")
 
         if not output_paths:
             abort(400, "Không có file hợp lệ để chuyển đổi")
@@ -1565,15 +1621,21 @@ def files_to_tgs_zip():
 
     except HTTPException:
         shutil.rmtree(batch_dir, ignore_errors=True)
+        if temp_extract_dir:
+            shutil.rmtree(temp_extract_dir, ignore_errors=True)
         raise
     except Exception as exc:
         shutil.rmtree(batch_dir, ignore_errors=True)
+        if temp_extract_dir:
+            shutil.rmtree(temp_extract_dir, ignore_errors=True)
         abort(500, f"Lỗi chuyển đổi sang TGS: {exc}")
 
     # Cleanup after request
     @after_this_request
     def cleanup(response):  # type: ignore
         shutil.rmtree(batch_dir, ignore_errors=True)
+        if temp_extract_dir:
+            shutil.rmtree(temp_extract_dir, ignore_errors=True)
         return response
 
     return send_file(
