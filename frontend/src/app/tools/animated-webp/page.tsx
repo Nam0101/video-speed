@@ -22,14 +22,15 @@ const StatusNotice = ({ status }: { status: string }) => {
   const statusType = statusParts[0];
   const statusMessage =
     statusParts.length > 1 ? statusParts.slice(1).join(":") : status;
-  const tone =
-    statusType === "error"
-      ? "bg-rose-50 border-rose-200 text-rose-700"
-      : statusType === "success"
-        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-        : statusType === "processing"
-          ? "bg-sky-50 border-sky-200 text-sky-700"
-          : "bg-slate-50 border-slate-200 text-slate-600";
+
+  const toneClasses = {
+    error: "bg-rose-500/10 border-rose-500/30 text-rose-400",
+    success: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400",
+    processing: "bg-sky-500/10 border-sky-500/30 text-sky-400",
+    default: "bg-[var(--secondary)] border-[var(--border)] text-[var(--muted)]"
+  };
+
+  const tone = toneClasses[statusType as keyof typeof toneClasses] || toneClasses.default;
 
   return (
     <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${tone}`}>
@@ -190,43 +191,43 @@ export default function AnimatedWebPPage() {
         <div className="flex items-center gap-4">
           <Link
             href="/tools"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/80 text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] transition hover:-translate-y-0.5 hover:border-[var(--primary)] cursor-pointer"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--muted)]">
               Motion Studio
             </p>
-            <h1 className="text-3xl font-heading font-semibold text-slate-900 md:text-4xl">
+            <h1 className="text-3xl font-heading font-semibold text-[var(--foreground)] md:text-4xl">
               Animated WebP & GIF
             </h1>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-sm text-[var(--muted)]">
               Từ video, GIF hoặc chuỗi ảnh sang WebP động nhẹ và mượt.
             </p>
           </div>
         </div>
-        <span className="rounded-full bg-white/70 px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200">
+        <span className="rounded-full bg-[var(--secondary)] px-4 py-2 text-xs font-semibold text-[var(--muted)] border border-[var(--border)]">
           Endpoints: /images-to-animated-webp · /mp4-to-animated-webp · /gif-to-webp · /webm-to-gif
         </span>
       </header>
 
       <section className="mt-8 grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   Ảnh → WebP
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   Ghép chuỗi ảnh
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Upload nhiều ảnh theo thứ tự để tạo WebP động.
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/20 text-sky-400">
                 <ImageIcon className="h-5 w-5" />
               </div>
             </div>
@@ -239,14 +240,14 @@ export default function AnimatedWebPPage() {
                 onChange={(event) =>
                   setImagesFiles(Array.from(event.target.files || []))
                 }
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-sky-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-sky-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-sky-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-sky-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">{imagesSummary}</div>
+              <div className="text-xs text-[var(--muted)]">{imagesSummary}</div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   FPS
                 </label>
                 <input
@@ -255,11 +256,11 @@ export default function AnimatedWebPPage() {
                   max="60"
                   value={imagesFps}
                   onChange={(event) => setImagesFps(Number(event.target.value))}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Width (px)
                 </label>
                 <input
@@ -269,7 +270,7 @@ export default function AnimatedWebPPage() {
                   placeholder="Auto"
                   value={imagesWidth}
                   onChange={(event) => setImagesWidth(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
             </div>
@@ -277,7 +278,7 @@ export default function AnimatedWebPPage() {
             <button
               onClick={handleImagesConvert}
               disabled={imagesProcessing || imagesFiles.length === 0}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {imagesProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -291,20 +292,20 @@ export default function AnimatedWebPPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   GIF → WebP
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   Nén GIF nhẹ hơn
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Chuyển GIF sang WebP để giảm dung lượng và giữ animation.
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-500/20 text-rose-400">
                 <Sticker className="h-5 w-5" />
               </div>
             </div>
@@ -314,16 +315,16 @@ export default function AnimatedWebPPage() {
                 type="file"
                 accept="image/gif"
                 onChange={(event) => setGifFile(event.target.files?.[0] || null)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-rose-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-rose-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-rose-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-rose-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-[var(--muted)]">
                 {gifFile ? `${gifFile.name} · ${formatBytes(gifFile.size)}` : "Chưa có file"}
               </div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-3">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   FPS
                 </label>
                 <input
@@ -332,11 +333,11 @@ export default function AnimatedWebPPage() {
                   max="60"
                   value={gifFps}
                   onChange={(event) => setGifFps(Number(event.target.value))}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Width
                 </label>
                 <input
@@ -346,11 +347,11 @@ export default function AnimatedWebPPage() {
                   placeholder="Auto"
                   value={gifWidth}
                   onChange={(event) => setGifWidth(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Duration
                 </label>
                 <input
@@ -360,7 +361,7 @@ export default function AnimatedWebPPage() {
                   placeholder="Auto"
                   value={gifDuration}
                   onChange={(event) => setGifDuration(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
             </div>
@@ -368,7 +369,7 @@ export default function AnimatedWebPPage() {
             <button
               onClick={handleGifConvert}
               disabled={gifProcessing || !gifFile}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {gifProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -384,20 +385,20 @@ export default function AnimatedWebPPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   MP4 → WebP
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   Trích video thành WebP
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Dành cho preview animation ngắn, nhẹ.
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400">
                 <Video className="h-5 w-5" />
               </div>
             </div>
@@ -407,16 +408,16 @@ export default function AnimatedWebPPage() {
                 type="file"
                 accept="video/mp4"
                 onChange={(event) => setMp4File(event.target.files?.[0] || null)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-indigo-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-indigo-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-indigo-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-[var(--muted)]">
                 {mp4File ? `${mp4File.name} · ${formatBytes(mp4File.size)}` : "Chưa có file"}
               </div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-3">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   FPS
                 </label>
                 <input
@@ -425,11 +426,11 @@ export default function AnimatedWebPPage() {
                   max="60"
                   value={mp4Fps}
                   onChange={(event) => setMp4Fps(Number(event.target.value))}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Width
                 </label>
                 <input
@@ -439,11 +440,11 @@ export default function AnimatedWebPPage() {
                   placeholder="Auto"
                   value={mp4Width}
                   onChange={(event) => setMp4Width(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Duration
                 </label>
                 <input
@@ -453,7 +454,7 @@ export default function AnimatedWebPPage() {
                   placeholder="Auto"
                   value={mp4Duration}
                   onChange={(event) => setMp4Duration(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
             </div>
@@ -461,7 +462,7 @@ export default function AnimatedWebPPage() {
             <button
               onClick={handleMp4Convert}
               disabled={mp4Processing || !mp4File}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {mp4Processing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -475,20 +476,20 @@ export default function AnimatedWebPPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   WebM → GIF
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   Chuyển WebM thành GIF
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Tạo GIF tương thích mọi nền tảng.
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400">
                 <Sparkles className="h-5 w-5" />
               </div>
             </div>
@@ -498,16 +499,16 @@ export default function AnimatedWebPPage() {
                 type="file"
                 accept="video/webm"
                 onChange={(event) => setWebmFile(event.target.files?.[0] || null)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-amber-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-amber-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-amber-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-amber-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-[var(--muted)]">
                 {webmFile ? `${webmFile.name} · ${formatBytes(webmFile.size)}` : "Chưa có file"}
               </div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   FPS
                 </label>
                 <input
@@ -516,11 +517,11 @@ export default function AnimatedWebPPage() {
                   max="60"
                   value={webmFps}
                   onChange={(event) => setWebmFps(Number(event.target.value))}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Width
                 </label>
                 <input
@@ -530,7 +531,7 @@ export default function AnimatedWebPPage() {
                   placeholder="Auto"
                   value={webmWidth}
                   onChange={(event) => setWebmWidth(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
             </div>
@@ -538,7 +539,7 @@ export default function AnimatedWebPPage() {
             <button
               onClick={handleWebmConvert}
               disabled={webmProcessing || !webmFile}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {webmProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

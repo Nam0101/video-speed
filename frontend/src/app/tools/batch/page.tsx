@@ -21,14 +21,15 @@ const StatusNotice = ({ status }: { status: string }) => {
   const statusType = statusParts[0];
   const statusMessage =
     statusParts.length > 1 ? statusParts.slice(1).join(":") : status;
-  const tone =
-    statusType === "error"
-      ? "bg-rose-50 border-rose-200 text-rose-700"
-      : statusType === "success"
-        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-        : statusType === "processing"
-          ? "bg-sky-50 border-sky-200 text-sky-700"
-          : "bg-slate-50 border-slate-200 text-slate-600";
+
+  const toneClasses = {
+    error: "bg-rose-500/10 border-rose-500/30 text-rose-400",
+    success: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400",
+    processing: "bg-sky-500/10 border-sky-500/30 text-sky-400",
+    default: "bg-[var(--secondary)] border-[var(--border)] text-[var(--muted)]"
+  };
+
+  const tone = toneClasses[statusType as keyof typeof toneClasses] || toneClasses.default;
 
   return (
     <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${tone}`}>
@@ -319,43 +320,43 @@ export default function BatchPage() {
         <div className="flex items-center gap-4">
           <Link
             href="/tools"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/80 text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] transition hover:-translate-y-0.5 hover:border-[var(--primary)] cursor-pointer"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--muted)]">
               Batch Ops
             </p>
-            <h1 className="text-3xl font-heading font-semibold text-slate-900 md:text-4xl">
+            <h1 className="text-3xl font-heading font-semibold text-[var(--foreground)] md:text-4xl">
               Xử lý hàng loạt
             </h1>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-sm text-[var(--muted)]">
               Upload nhiều file, trả về ZIP tối ưu theo preset.
             </p>
           </div>
         </div>
-        <span className="rounded-full bg-white/70 px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200">
+        <span className="rounded-full bg-[var(--secondary)] px-4 py-2 text-xs font-semibold text-[var(--muted)] border border-[var(--border)]">
           Endpoints: /images-to-webp-zip · /images-convert-zip · /tgs-to-gif-zip · /files-to-tgs-zip · /batch-to-webp-zip · /batch-animated-resize-zip · /webp-resize-zip
         </span>
       </header>
 
       <section className="mt-8 grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   WebP ZIP
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   PNG/JPG → WebP
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Chuyển hàng loạt ảnh sang WebP và đóng gói ZIP.
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/20 text-sky-400">
                 <Package className="h-5 w-5" />
               </div>
             </div>
@@ -368,15 +369,15 @@ export default function BatchPage() {
                 onChange={(event) =>
                   setImagesZipFiles(Array.from(event.target.files || []))
                 }
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-sky-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-sky-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-sky-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-sky-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">{imagesZipSummary}</div>
+              <div className="text-xs text-[var(--muted)]">{imagesZipSummary}</div>
             </div>
 
             <button
               onClick={handleImagesZip}
               disabled={imagesZipProcessing || !imagesZipFiles.length}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {imagesZipProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -390,20 +391,20 @@ export default function BatchPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   Batch Convert
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   Convert đa định dạng
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Chọn format, width, chất lượng và xuất ZIP.
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-400">
                 <Wand2 className="h-5 w-5" />
               </div>
             </div>
@@ -416,14 +417,14 @@ export default function BatchPage() {
                 onChange={(event) =>
                   setConvertZipFiles(Array.from(event.target.files || []))
                 }
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-indigo-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-indigo-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-indigo-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">{convertZipSummary}</div>
+              <div className="text-xs text-[var(--muted)]">{convertZipSummary}</div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Format
                 </label>
                 <select
@@ -431,7 +432,7 @@ export default function BatchPage() {
                   onChange={(event) =>
                     setConvertFormat(event.target.value as "webp" | "png" | "jpg")
                   }
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2 cursor-pointer"
                 >
                   <option value="webp">WebP</option>
                   <option value="png">PNG</option>
@@ -439,7 +440,7 @@ export default function BatchPage() {
                 </select>
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Width
                 </label>
                 <input
@@ -449,11 +450,11 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={convertWidth}
                   onChange={(event) => setConvertWidth(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Quality
                 </label>
                 <input
@@ -463,16 +464,16 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={convertQuality}
                   onChange={(event) => setConvertQuality(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
-              <div className="flex items-center gap-3 pt-6 text-xs font-semibold text-slate-600">
+              <div className="flex items-center gap-3 pt-6 text-xs font-semibold text-[var(--muted)]">
                 <input
                   id="lossless"
                   type="checkbox"
                   checked={convertLossless}
                   onChange={(event) => setConvertLossless(event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                  className="h-4 w-4 rounded border-[var(--border)] accent-[var(--primary)] cursor-pointer"
                   disabled={convertFormat !== "webp"}
                 />
                 <label htmlFor="lossless" className="cursor-pointer">
@@ -484,7 +485,7 @@ export default function BatchPage() {
             <button
               onClick={handleConvertZip}
               disabled={convertZipProcessing || !convertZipFiles.length}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {convertZipProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -500,20 +501,20 @@ export default function BatchPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   TGS → GIF
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   Telegram Sticker
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Chuyển nhiều file .tgs sang GIF và tải ZIP.
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400">
                 <Sparkles className="h-5 w-5" />
               </div>
             </div>
@@ -526,14 +527,14 @@ export default function BatchPage() {
                 onChange={(event) =>
                   setTgsFiles(Array.from(event.target.files || []))
                 }
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-emerald-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-emerald-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-emerald-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-emerald-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">{tgsSummary}</div>
+              <div className="text-xs text-[var(--muted)]">{tgsSummary}</div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-3">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Width
                 </label>
                 <input
@@ -543,11 +544,11 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={tgsWidth}
                   onChange={(event) => setTgsWidth(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Quality
                 </label>
                 <input
@@ -557,11 +558,11 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={tgsQuality}
                   onChange={(event) => setTgsQuality(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   FPS
                 </label>
                 <input
@@ -571,7 +572,7 @@ export default function BatchPage() {
                   placeholder="30"
                   value={tgsFps}
                   onChange={(event) => setTgsFps(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
             </div>
@@ -579,7 +580,7 @@ export default function BatchPage() {
             <button
               onClick={handleTgsZip}
               disabled={tgsProcessing || !tgsFiles.length}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {tgsProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -593,20 +594,20 @@ export default function BatchPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   Files → TGS
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   Chuyển sang TGS
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Chuyển JSON/GIF/WebP/WebM/PNG sang TGS (Telegram Sticker).
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-pink-100 text-pink-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-pink-500/20 text-pink-400">
                 <Sparkles className="h-5 w-5" />
               </div>
             </div>
@@ -619,14 +620,14 @@ export default function BatchPage() {
                 onChange={(event) =>
                   setToTgsFiles(Array.from(event.target.files || []))
                 }
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-pink-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-pink-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-pink-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-pink-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">{toTgsSummary}</div>
+              <div className="text-xs text-[var(--muted)]">{toTgsSummary}</div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Width
                 </label>
                 <input
@@ -636,11 +637,11 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={toTgsWidth}
                   onChange={(event) => setToTgsWidth(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   FPS (animated)
                 </label>
                 <input
@@ -650,7 +651,7 @@ export default function BatchPage() {
                   placeholder="30"
                   value={toTgsFps}
                   onChange={(event) => setToTgsFps(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
             </div>
@@ -658,7 +659,7 @@ export default function BatchPage() {
             <button
               onClick={handleFilesToTgs}
               disabled={toTgsProcessing || !toTgsFiles.length}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-pink-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-pink-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {toTgsProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -672,20 +673,20 @@ export default function BatchPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   Animated Resize
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   Resize WebP/GIF động
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Thay đổi kích thước + target size để tối ưu dung lượng.
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400">
                 <Package className="h-5 w-5" />
               </div>
             </div>
@@ -698,14 +699,14 @@ export default function BatchPage() {
                 onChange={(event) =>
                   setAnimatedResizeFiles(Array.from(event.target.files || []))
                 }
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-amber-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-amber-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-amber-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-amber-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">{animatedSummary}</div>
+              <div className="text-xs text-[var(--muted)]">{animatedSummary}</div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Width
                 </label>
                 <input
@@ -715,11 +716,11 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={animatedWidth}
                   onChange={(event) => setAnimatedWidth(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Height
                 </label>
                 <input
@@ -729,11 +730,11 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={animatedHeight}
                   onChange={(event) => setAnimatedHeight(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Target KB
                 </label>
                 <input
@@ -743,11 +744,11 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={animatedTargetSize}
                   onChange={(event) => setAnimatedTargetSize(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Quality
                 </label>
                 <input
@@ -757,7 +758,7 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={animatedQuality}
                   onChange={(event) => setAnimatedQuality(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
             </div>
@@ -765,7 +766,7 @@ export default function BatchPage() {
             <button
               onClick={handleAnimatedResize}
               disabled={animatedProcessing || !animatedResizeFiles.length}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {animatedProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -779,20 +780,20 @@ export default function BatchPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   WebP Resize
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   Resize + target size
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Dùng cho ảnh tĩnh WebP/JPG/PNG.
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-500/20 text-slate-400">
                 <Package className="h-5 w-5" />
               </div>
             </div>
@@ -805,14 +806,14 @@ export default function BatchPage() {
                 onChange={(event) =>
                   setWebpResizeFiles(Array.from(event.target.files || []))
                 }
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-slate-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-slate-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-slate-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">{webpResizeSummary}</div>
+              <div className="text-xs text-[var(--muted)]">{webpResizeSummary}</div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Format
                 </label>
                 <select
@@ -822,7 +823,7 @@ export default function BatchPage() {
                       event.target.value as "webp" | "png" | "jpg"
                     )
                   }
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2 cursor-pointer"
                 >
                   <option value="webp">WebP</option>
                   <option value="png">PNG</option>
@@ -830,7 +831,7 @@ export default function BatchPage() {
                 </select>
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Width
                 </label>
                 <input
@@ -840,11 +841,11 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={webpResizeWidth}
                   onChange={(event) => setWebpResizeWidth(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Target KB
                 </label>
                 <input
@@ -854,11 +855,11 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={webpResizeTarget}
                   onChange={(event) => setWebpResizeTarget(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Quality
                 </label>
                 <input
@@ -868,7 +869,7 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={webpResizeQuality}
                   onChange={(event) => setWebpResizeQuality(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
             </div>
@@ -876,7 +877,7 @@ export default function BatchPage() {
             <button
               onClick={handleWebpResize}
               disabled={webpResizeProcessing || !webpResizeFiles.length}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-slate-600 to-slate-800 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-slate-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {webpResizeProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -890,20 +891,20 @@ export default function BatchPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="glass-card p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                   Universal → WebP
                 </p>
-                <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+                <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                   TGS/WebM/PNG/GIF → WebP
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--muted)]">
                   Chuyển nhiều file sang WebP và tải ZIP.
                 </p>
               </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/20 text-violet-400">
                 <Sparkles className="h-5 w-5" />
               </div>
             </div>
@@ -916,14 +917,14 @@ export default function BatchPage() {
                 onChange={(event) =>
                   setBatchToWebpFiles(Array.from(event.target.files || []))
                 }
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-violet-50 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-violet-600"
+                className="w-full rounded-2xl border border-[var(--border)] bg-[var(--secondary)] px-4 py-3 text-sm text-[var(--foreground)] file:mr-4 file:rounded-full file:border-0 file:bg-violet-500/20 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-violet-400 cursor-pointer"
               />
-              <div className="text-xs text-slate-500">{batchToWebpSummary}</div>
+              <div className="text-xs text-[var(--muted)]">{batchToWebpSummary}</div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-3">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Width
                 </label>
                 <input
@@ -933,11 +934,11 @@ export default function BatchPage() {
                   placeholder="Auto"
                   value={batchToWebpWidth}
                   onChange={(event) => setBatchToWebpWidth(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   FPS (animated)
                 </label>
                 <input
@@ -947,11 +948,11 @@ export default function BatchPage() {
                   placeholder="15"
                   value={batchToWebpFps}
                   onChange={(event) => setBatchToWebpFps(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                   Quality
                 </label>
                 <input
@@ -961,7 +962,7 @@ export default function BatchPage() {
                   placeholder="80"
                   value={batchToWebpQuality}
                   onChange={(event) => setBatchToWebpQuality(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className="input mt-2"
                 />
               </div>
             </div>
@@ -969,7 +970,7 @@ export default function BatchPage() {
             <button
               onClick={handleBatchToWebp}
               disabled={batchToWebpProcessing || !batchToWebpFiles.length}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-500 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 to-purple-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-violet-500/20 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               {batchToWebpProcessing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

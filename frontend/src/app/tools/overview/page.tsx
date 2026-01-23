@@ -76,23 +76,23 @@ export default function ToolsOverviewPage() {
         <div className="flex items-center gap-4">
           <Link
             href="/tools"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/80 text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] transition hover:-translate-y-0.5 hover:border-[var(--primary)] cursor-pointer"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--muted)]">
               Reference
             </p>
-            <h1 className="text-3xl font-heading font-semibold text-slate-900 md:text-4xl">
+            <h1 className="text-3xl font-heading font-semibold text-[var(--foreground)] md:text-4xl">
               API Overview
             </h1>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-sm text-[var(--muted)]">
               Tổng hợp nhanh endpoint & use-case để team dễ map workflow.
             </p>
           </div>
         </div>
-        <span className="rounded-full bg-white/70 px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200">
+        <span className="rounded-full bg-[var(--secondary)] px-4 py-2 text-xs font-semibold text-[var(--muted)] border border-[var(--border)]">
           Base URL: {process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001"}
         </span>
       </header>
@@ -102,30 +102,30 @@ export default function ToolsOverviewPage() {
           <div
             key={group.group}
             style={{ animationDelay: `${index * 0.08}s` }}
-            className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200 motion-safe:animate-fade-up"
+            className="glass-card p-6 motion-safe:animate-fade-up"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-heading font-semibold text-slate-900">
+              <h2 className="text-lg font-heading font-semibold text-[var(--foreground)]">
                 {group.group}
               </h2>
-              <ShieldCheck className="h-5 w-5 text-emerald-500" />
+              <ShieldCheck className="h-5 w-5 text-emerald-400" />
             </div>
-            <div className="mt-4 space-y-3 text-sm text-slate-600">
+            <div className="mt-4 space-y-3 text-sm text-[var(--muted)]">
               {group.items.map((item) => (
                 <div
                   key={`${item.method}-${item.path}`}
-                  className="flex items-start justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3"
+                  className="flex items-start justify-between gap-3 rounded-2xl bg-[var(--secondary)] px-4 py-3 border border-[var(--border)] transition-colors hover:border-[var(--primary)]/30"
                 >
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted)]">
                       {item.method}
                     </p>
-                    <p className="mt-1 font-mono text-sm text-slate-900">
+                    <p className="mt-1 font-mono text-sm text-[var(--foreground)]">
                       {item.path}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">{item.note}</p>
+                    <p className="mt-1 text-xs text-[var(--muted)]">{item.note}</p>
                   </div>
-                  <ExternalLink className="mt-1 h-4 w-4 text-slate-400" />
+                  <ExternalLink className="mt-1 h-4 w-4 text-[var(--muted)]" />
                 </div>
               ))}
             </div>

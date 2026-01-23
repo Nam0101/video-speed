@@ -77,12 +77,12 @@ export default function ImageWebPPage() {
 
   const statusTone =
     statusType === "error"
-      ? "bg-rose-50 border-rose-200 text-rose-700"
+      ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
       : statusType === "success"
-        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
         : statusType === "processing"
-          ? "bg-sky-50 border-sky-200 text-sky-700"
-          : "bg-slate-50 border-slate-200 text-slate-600";
+          ? "bg-sky-500/10 border-sky-500/30 text-sky-400"
+          : "bg-[var(--secondary)] border-[var(--border)] text-[var(--muted)]";
 
   return (
     <main className="mt-10 flex-1">
@@ -90,54 +90,53 @@ export default function ImageWebPPage() {
         <div className="flex items-center gap-4">
           <Link
             href="/tools"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/80 text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] transition hover:-translate-y-0.5 hover:border-[var(--primary)] cursor-pointer"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--muted)]">
               Image Toolkit
             </p>
-            <h1 className="text-3xl font-heading font-semibold text-slate-900 md:text-4xl">
+            <h1 className="text-3xl font-heading font-semibold text-[var(--foreground)] md:text-4xl">
               PNG/JPG → WebP
             </h1>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-sm text-[var(--muted)]">
               Tối ưu dung lượng, giữ chất lượng ảnh sản phẩm.
             </p>
           </div>
         </div>
-        <span className="rounded-full bg-white/70 px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200">
+        <span className="rounded-full bg-[var(--secondary)] px-4 py-2 text-xs font-semibold text-[var(--muted)] border border-[var(--border)]">
           Endpoint: /png-to-webp
         </span>
       </header>
 
       <section className="mt-8 grid gap-6 lg:grid-cols-[1fr_0.85fr]">
-        <div className="rounded-3xl bg-white/80 p-6 shadow-sm ring-1 ring-slate-200">
+        <div className="glass-card p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">
                 Input
               </p>
-              <h2 className="mt-2 text-xl font-heading font-semibold text-slate-900">
+              <h2 className="mt-2 text-xl font-heading font-semibold text-[var(--foreground)]">
                 Chọn file ảnh
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-[var(--muted)]">
                 Chấp nhận PNG, JPG, JPEG. Output WebP tải về ngay.
               </p>
             </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400">
               <ImageIcon className="h-5 w-5" />
             </div>
           </div>
 
           <div
-            className={`group relative mt-6 rounded-2xl border-2 border-dashed p-6 transition-all duration-300 focus-within:ring-2 focus-within:ring-emerald-400/60 ${
-              dragActive
-                ? "border-emerald-400 bg-emerald-50/80 shadow-lg shadow-emerald-200/60"
+            className={`group relative mt-6 rounded-2xl border-2 border-dashed p-6 transition-all duration-300 focus-within:ring-2 focus-within:ring-emerald-400/60 ${dragActive
+                ? "border-emerald-400 bg-emerald-500/10 glow-sm"
                 : file
-                  ? "border-sky-300 bg-sky-50/70"
-                  : "border-slate-200/80 bg-white/70 hover:border-emerald-300 hover:bg-emerald-50/40"
-            }`}
+                  ? "border-[var(--primary)] bg-[var(--primary)]/10"
+                  : "border-[var(--border)] bg-[var(--secondary)] hover:border-emerald-400/50 hover:bg-[var(--card)]"
+              }`}
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
@@ -167,11 +166,10 @@ export default function ImageWebPPage() {
               className="relative z-10 cursor-pointer text-center focus:outline-none"
             >
               <div
-                className={`mx-auto flex h-16 w-16 items-center justify-center rounded-2xl transition-transform duration-300 ${
-                  file
-                    ? "bg-sky-500 text-white"
+                className={`mx-auto flex h-16 w-16 items-center justify-center rounded-2xl transition-transform duration-300 ${file
+                    ? "bg-[var(--primary)] text-white"
                     : "bg-gradient-to-br from-emerald-500 to-teal-500 text-white group-hover:scale-110"
-                }`}
+                  }`}
               >
                 {file ? (
                   <CheckCircle2 className="h-8 w-8" />
@@ -182,52 +180,52 @@ export default function ImageWebPPage() {
 
               {file ? (
                 <div className="mt-4 space-y-1">
-                  <p className="text-sm font-semibold text-sky-600">
+                  <p className="text-sm font-semibold text-[var(--primary)]">
                     Đã chọn file
                   </p>
-                  <p className="truncate text-sm font-medium text-slate-700">
+                  <p className="truncate text-sm font-medium text-[var(--foreground)]">
                     {file.name}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-[var(--muted)]">
                     {formatBytes(file.size)}
                   </p>
                 </div>
               ) : (
                 <div className="mt-4 space-y-1">
-                  <p className="text-sm font-semibold text-slate-700">
+                  <p className="text-sm font-semibold text-[var(--foreground)]">
                     Kéo thả ảnh vào đây
                   </p>
-                  <p className="text-xs text-slate-500">hoặc click để chọn file</p>
-                  <p className="text-xs text-slate-400">Giữ nguyên màu sắc</p>
+                  <p className="text-xs text-[var(--muted)]">hoặc click để chọn file</p>
+                  <p className="text-xs text-[var(--muted)]">Giữ nguyên màu sắc</p>
                 </div>
               )}
             </div>
 
             {dragActive && (
-              <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-200/70 via-white/20 to-sky-200/60" />
+              <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-500/20 via-transparent to-teal-500/20" />
             )}
           </div>
         </div>
 
         <aside className="space-y-6">
-          <div className="rounded-3xl bg-gradient-to-br from-emerald-400 via-teal-400 to-sky-500 p-[1px] shadow-2xl shadow-emerald-200/50">
-            <div className="rounded-[23px] bg-white/90 p-6">
-              <h3 className="text-lg font-heading font-semibold text-slate-900">
+          <div className="rounded-3xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 p-[1px] shadow-2xl shadow-emerald-500/20">
+            <div className="glass-card rounded-[23px] p-6">
+              <h3 className="text-lg font-heading font-semibold text-[var(--foreground)]">
                 Kết quả tối ưu
               </h3>
-              <p className="mt-2 text-sm text-slate-600">
+              <p className="mt-2 text-sm text-[var(--muted)]">
                 WebP giảm dung lượng ~25-35% so với JPEG và PNG.
               </p>
-              <div className="mt-4 grid gap-3 text-xs text-slate-500">
+              <div className="mt-4 grid gap-3 text-xs text-[var(--muted)]">
                 <div className="flex items-center justify-between">
                   <span>Input</span>
-                  <span className="font-semibold text-slate-700">
+                  <span className="font-semibold text-[var(--foreground)]">
                     {file ? formatBytes(file.size) : "--"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Output</span>
-                  <span className="font-semibold text-slate-700">WebP</span>
+                  <span className="font-semibold text-[var(--foreground)]">WebP</span>
                 </div>
               </div>
             </div>
@@ -236,7 +234,7 @@ export default function ImageWebPPage() {
           <button
             onClick={handleConvert}
             disabled={processing || !file}
-            className="group relative w-full overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-sky-500 px-8 py-4 text-sm font-semibold text-white shadow-lg shadow-emerald-200/60 transition-all duration-300 hover:brightness-105 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 disabled:cursor-not-allowed disabled:opacity-50"
+            className="group relative w-full overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 px-8 py-4 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:brightness-105 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
           >
             <span className="relative z-10 flex items-center justify-center gap-3">
               {processing ? (

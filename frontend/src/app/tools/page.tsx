@@ -4,6 +4,7 @@ import {
   Boxes,
   ImageIcon,
   Layers,
+  MessageCircle,
   Sparkles,
   Video,
   ArrowRight,
@@ -46,6 +47,15 @@ const tools = [
     featured: false,
   },
   {
+    title: "Convert → TGS",
+    description: "JSON, GIF, WebP, WebM, PNG → TGS (Telegram Sticker).",
+    href: "/tools/convert-tgs",
+    icon: MessageCircle,
+    badge: "Sticker",
+    gradient: "from-sky-400 via-blue-500 to-indigo-600",
+    featured: false,
+  },
+  {
     title: "Batch Conversion",
     description: "Xử lý hàng loạt, resize, zip chuyên nghiệp.",
     href: "/tools/batch",
@@ -76,7 +86,7 @@ const tools = [
 ];
 
 const stats = [
-  { icon: Wrench, value: "6", label: "Tools" },
+  { icon: Wrench, value: "7", label: "Tools" },
   { icon: Clock, value: "24/7", label: "Available" },
   { icon: TrendingUp, value: "99.9%", label: "Uptime" },
 ];
