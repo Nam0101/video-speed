@@ -508,8 +508,11 @@ def _convert_video_to_animated_webp(
     width: int | None = None,
     duration: int | None = None,
     loop: int = 0,
+    output_path: Path | None = None,
 ) -> Path:
-    output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.webp"
+    if output_path is None:
+        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.webp"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     vf_parts: list[str] = [f"fps={fps}"]
     if width is not None:
@@ -1869,7 +1872,10 @@ def batch_to_webp_zip():
             else:
                 return None
             return output_path
-        except Exception:
+        except Exception as e:
+            print(f"[DEBUG] process_single_file error for {original_name}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     output_paths: list[Path] = []
