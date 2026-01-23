@@ -298,7 +298,7 @@ def _convert_image(
         min_quality = 10
 
         for q in range(best_quality, min_quality - 1, -5):
-            cmd: list[str] = ["ffmpeg", "-y", "-i", str(input_path)]
+            cmd: list[str] = ["/usr/bin/ffmpeg", "-y", "-i", str(input_path)]
             if vf:
                 cmd += ["-vf", vf]
 
@@ -330,7 +330,7 @@ def _convert_image(
         return output_path
 
     # Standard conversion without size constraint
-    cmd: list[str] = ["ffmpeg", "-y", "-i", str(input_path)]
+    cmd: list[str] = ["/usr/bin/ffmpeg", "-y", "-i", str(input_path)]
     if vf:
         cmd += ["-vf", vf]
 
@@ -365,7 +365,7 @@ def _convert_video(
     input_path: Path, fps: int, duration: int | None = None, loop: bool = False
 ) -> Path:
     output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.mp4"
-    cmd = ["ffmpeg", "-y"]
+    cmd = ["/usr/bin/ffmpeg", "-y"]
     if loop and duration:
         cmd += ["-stream_loop", "-1"]  # loop source to satisfy target duration
     cmd += [
@@ -409,7 +409,7 @@ def _convert_image_to_webp(
         output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.webp"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ffmpeg",
+        "/usr/bin/ffmpeg",
         "-y",
         "-i",
         str(input_path),
@@ -459,7 +459,7 @@ def _convert_images_to_animated_webp(
     vf = ",".join(vf_parts)
 
     cmd = [
-        "ffmpeg",
+        "/usr/bin/ffmpeg",
         "-y",
         "-f",
         "concat",
@@ -507,7 +507,7 @@ def _convert_video_to_animated_webp(
     vf_parts.append("format=rgba")
     vf = ",".join(vf_parts)
 
-    cmd: list[str] = ["ffmpeg", "-y", "-i", str(input_path)]
+    cmd: list[str] = ["/usr/bin/ffmpeg", "-y", "-i", str(input_path)]
     if duration:
         cmd += ["-t", str(duration)]
     cmd += [
@@ -565,7 +565,7 @@ def _resize_animated_media(
         min_quality = 10
 
         for q in range(best_quality, min_quality - 1, -5):
-            cmd: list[str] = ["ffmpeg", "-y", "-i", str(input_path)]
+            cmd: list[str] = ["/usr/bin/ffmpeg", "-y", "-i", str(input_path)]
 
             if vf_parts:
                 vf_parts_copy = vf_parts.copy()
@@ -598,7 +598,7 @@ def _resize_animated_media(
         return output_path
 
     # Standard conversion without size constraint
-    cmd: list[str] = ["ffmpeg", "-y", "-i", str(input_path)]
+    cmd: list[str] = ["/usr/bin/ffmpeg", "-y", "-i", str(input_path)]
 
     if vf_parts:
         if suffix == ".webp":
@@ -703,7 +703,7 @@ def _convert_webm_to_gif(
     vf = f"fps={fps},scale={width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
 
     cmd = [
-        "ffmpeg",
+        "/usr/bin/ffmpeg",
         "-y",
         "-i",
         str(input_path),
@@ -781,7 +781,7 @@ def _convert_gif_to_tgs(
             # Extract frames as PNG
             frame_pattern = str(frames_dir / "frame_%04d.png")
             cmd = [
-                "ffmpeg",
+                "/usr/bin/ffmpeg",
                 "-i", str(input_path),
                 "-vf", f"fps={fps}" + (f",scale={width}:-1" if width else ""),
                 frame_pattern,
