@@ -267,7 +267,7 @@ def _safe_zip_entry_name_with_ext(raw_stem: str, *, index: int, ext: str) -> str
     ext = (ext or "").lower().strip()
     if not ext.startswith("."):
         ext = f".{ext}"
-    if ext not in {".webp", ".png", ".jpg", ".gif"}:
+    if ext not in {".webp", ".png", ".jpg", ".gif", ".tgs"}:
         ext = ".png"
     return f"{stem}{ext}"
 
