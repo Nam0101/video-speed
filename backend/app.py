@@ -1865,7 +1865,7 @@ def batch_to_webp_zip():
                 _convert_video_to_animated_webp(input_path, fps=fps, width=width, loop=0, output_path=output_path)
             elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
                 # Static image → WebP
-                _convert_image_to_webp(input_path, lossless=(suffix == ".png"), quality=quality, width=width, output_path=output_path)
+                _convert_image(input_path, target="webp", width=width, quality=quality, lossless=(suffix == ".png"), output_path=output_path)
             else:
                 return None
             return output_path
