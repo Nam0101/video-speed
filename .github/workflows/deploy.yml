@@ -1,0 +1,88 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Cho phép trigger thủ công
+
+env:
+  VPS_HOST: 160.250.136.70
+  VPS_USER: root
+  BACKEND_PATH: /var/www/video-speed
+  FRONTEND_PATH: /root/video-speed/frontend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ env.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Backend
+        env:
+          SSHPASS: ${{ secrets.VPS_PASSWORD }}
+        run: |
+          sshpass -e ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+          cd /var/www/video-speed
+          
+          # Pull latest code
+          git fetch origin
+          git reset --hard origin/main
+          
+          # Copy backend app.py to root (Gunicorn config)
+          cp backend/app.py app.py
+          
+          # Install dependencies if requirements changed
+          /var/www/video-speed/venv/bin/pip install -r backend/requirements.txt --quiet
+          
+          # Graceful reload Gunicorn workers
+          pkill -HUP gunicorn || echo "Gunicorn not running, starting..."
+          
+          # Verify Gunicorn is running
+          pgrep -f gunicorn || {
+            source venv/bin/activate
+            nohup gunicorn -w 4 -b 0.0.0.0:5000 app:app > /var/log/gunicorn.log 2>&1 &
+          }
+          
+          echo "✅ Backend deployed!"
+          ENDSSH
+
+      - name: Deploy Frontend
+        env:
+          SSHPASS: ${{ secrets.VPS_PASSWORD }}
+        run: |
+          sshpass -e ssh -o StrictHostKeyChecking=no ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'ENDSSH'
+          cd /root/video-speed/frontend
+          
+          # Pull latest code  
+          git fetch origin
+          git reset --hard origin/main
+          
+          # Install dependencies
+          npm ci --silent
+          
+          # Clean build
+          rm -rf .next
+          npm run build
+          
+          # Restart Next.js server
+          pkill -9 -f 'next-server' || true
+          nohup npm run start -- -p 3002 > /var/log/frontend.log 2>&1 &
+          
+          echo "✅ Frontend deployed!"
+          ENDSSH
+
+      - name: Verify Deployment
+        run: |
+          sleep 5
+          curl -sf https://video-speed.160.250.136.70.nip.io/api/health || echo "⚠️ Backend health check failed"
+          curl -sf https://video-speed.160.250.136.70.nip.io/ || echo "⚠️ Frontend check failed"
+          echo "🎉 Deployment complete!"

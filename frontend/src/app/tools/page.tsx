@@ -7,156 +7,280 @@ import {
   Sparkles,
   Video,
   ArrowRight,
+  Zap,
+  Shield,
+  Download,
+  Wrench,
+  Clock,
+  TrendingUp,
 } from "lucide-react";
 
 const tools = [
   {
     title: "Video Export Loop",
-    description: "Xuất video FPS cố định theo thời lượng, loop mượt.",
+    description: "Xuất video FPS cố định theo thời lượng, loop mượt mà. Hỗ trợ nhiều preset và format.",
     href: "/tools/video-export",
     icon: Video,
     badge: "Export",
-    tone: "from-blue-500 via-cyan-500 to-indigo-500",
+    gradient: "from-blue-500 via-indigo-500 to-purple-600",
+    featured: true,
+    stats: "1.2k+ exports",
   },
   {
     title: "Image to WebP",
-    description: "Chuyển PNG/JPG sang WebP nhanh, giữ chất lượng.",
+    description: "Chuyển PNG/JPG sang WebP nhanh, giữ chất lượng cao với nhiều tùy chọn nén.",
     href: "/tools/image-webp",
     icon: ImageIcon,
     badge: "Image",
-    tone: "from-emerald-400 via-teal-400 to-cyan-500",
+    gradient: "from-emerald-400 via-teal-500 to-cyan-500",
+    featured: true,
+    stats: "2.5k+ converted",
   },
   {
-    title: "Animated WebP Studio",
+    title: "Animated WebP",
     description: "GIF, MP4, hoặc chuỗi ảnh thành WebP động.",
     href: "/tools/animated-webp",
     icon: Sparkles,
     badge: "Motion",
-    tone: "from-orange-400 via-amber-400 to-rose-400",
+    gradient: "from-orange-400 via-rose-500 to-pink-500",
+    featured: false,
   },
   {
     title: "Batch Conversion",
-    description: "Xử lý hàng loạt ảnh, sticker, resize, zip.",
+    description: "Xử lý hàng loạt, resize, zip chuyên nghiệp.",
     href: "/tools/batch",
     icon: Boxes,
     badge: "Batch",
-    tone: "from-fuchsia-500 via-purple-500 to-indigo-500",
+    gradient: "from-fuchsia-500 via-purple-500 to-indigo-600",
+    featured: false,
   },
   {
     title: "Android Logs",
-    description: "Theo dõi log Android theo thời gian thực.",
+    description: "Theo dõi log Android realtime.",
     href: "/tools/logs",
     icon: Activity,
     badge: "Realtime",
-    tone: "from-emerald-500 via-green-500 to-teal-500",
+    gradient: "from-green-400 via-emerald-500 to-teal-600",
+    featured: false,
   },
   {
     title: "API Overview",
-    description: "Tổng hợp nhanh các endpoint & preset phổ biến.",
+    description: "Endpoint & preset reference cho developers.",
     href: "/tools/overview",
     icon: Layers,
     badge: "Guide",
-    tone: "from-cyan-500 via-blue-500 to-violet-500",
+    gradient: "from-cyan-400 via-blue-500 to-violet-600",
+    featured: false,
+    fullWidth: true,
+  },
+];
+
+const stats = [
+  { icon: Wrench, value: "6", label: "Tools" },
+  { icon: Clock, value: "24/7", label: "Available" },
+  { icon: TrendingUp, value: "99.9%", label: "Uptime" },
+];
+
+const features = [
+  {
+    icon: Zap,
+    title: "Preset thông minh",
+    description: "FPS, width, quality được gợi ý theo use-case.",
+  },
+  {
+    icon: Shield,
+    title: "Realtime feedback",
+    description: "Thông báo tiến trình rõ ràng, hạn chế lỗi silent fail.",
+  },
+  {
+    icon: Download,
+    title: "Ready for batch",
+    description: "Tải zip hàng loạt, rename tự động.",
   },
 ];
 
 export default function ToolsPage() {
   return (
     <main className="text-slate-100">
-      <header className="space-y-4 animate-fade-in">
-        <div className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-800 px-4 py-1 text-xs font-semibold text-slate-300 ring-1 ring-slate-700">
-          <span className="h-2 w-2 rounded-full bg-gradient-to-r from-blue-500 to-orange-400 animate-pulse" />
+      {/* Header */}
+      <header className="space-y-8 animate-fade-in">
+        {/* Badge */}
+        <div className="inline-flex items-center gap-2 rounded-full bg-blue-500/10 backdrop-blur-sm px-4 py-2 text-xs font-medium text-blue-400 ring-1 ring-blue-500/20">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+          </span>
           Tool Library
         </div>
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold text-white md:text-5xl">
-            Bộ công cụ chuyên sâu cho media pipeline.
+
+        {/* Title */}
+        <div className="space-y-4">
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight">
+            <span className="text-white">Bộ công cụ </span>
+            <span className="gradient-text-animated">chuyên sâu</span>
+            <br />
+            <span className="text-slate-400 font-medium text-2xl md:text-3xl lg:text-4xl">
+              cho media pipeline của bạn
+            </span>
           </h1>
-          <p className="max-w-2xl text-base text-slate-400 md:text-lg">
-            Mỗi trang là một workflow đầy đủ: upload, config, xử lý và tải về. Tối ưu
-            cho creator, editor và đội vận hành.
+          <p className="max-w-2xl text-base text-slate-500 md:text-lg leading-relaxed">
+            Mỗi tool là một workflow hoàn chỉnh: upload, config, xử lý và tải về.
+            Được tối ưu cho tốc độ và chất lượng cao nhất.
           </p>
+        </div>
+
+        {/* Stats Bar */}
+        <div className="stats-bar inline-flex items-center gap-0 px-2 py-2">
+          {stats.map((stat, index) => {
+            const Icon = stat.icon;
+            return (
+              <div
+                key={stat.label}
+                className="stats-item flex items-center gap-3 px-5 py-2"
+              >
+                <div className="w-9 h-9 rounded-lg bg-blue-500/15 flex items-center justify-center">
+                  <Icon className="w-4 h-4 text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-white">{stat.value}</p>
+                  <p className="text-xs text-slate-500">{stat.label}</p>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </header>
 
-      <section className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+      {/* Bento Grid */}
+      <section className="mt-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 md:gap-5">
         {tools.map((tool, index) => {
           const Icon = tool.icon;
+          const isFeatured = tool.featured;
+          const isFullWidth = 'fullWidth' in tool && tool.fullWidth;
+
           return (
             <Link
               key={tool.title}
               href={tool.href}
               style={{ animationDelay: `${index * 80}ms` }}
-              className="group relative overflow-hidden rounded-2xl bg-slate-900 p-5 ring-1 ring-slate-800 transition-all duration-300 hover:-translate-y-1 hover:ring-blue-500/50 hover-lift cursor-pointer animate-fade-up"
+              className={`
+                group relative rounded-3xl p-6 cursor-pointer animate-fade-up
+                gradient-border card-shine
+                ${isFeatured ? 'lg:col-span-3 bento-featured neon-glow' : ''}
+                ${isFullWidth ? 'lg:col-span-6 md:col-span-2' : ''}
+                ${!isFeatured && !isFullWidth ? 'lg:col-span-2' : ''}
+                transition-all duration-500 hover:scale-[1.02]
+              `}
             >
-              {/* Gradient overlay */}
+              {/* Background gradient glow on hover */}
               <div
-                className={`absolute inset-x-0 top-0 h-[120px] bg-gradient-to-r ${tool.tone} opacity-10 transition-opacity duration-300 group-hover:opacity-25`}
+                className={`absolute -inset-1 rounded-3xl bg-gradient-to-br ${tool.gradient} opacity-0 blur-2xl transition-opacity duration-700 group-hover:opacity-25 -z-10`}
               />
 
-              {/* Icon */}
-              <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-800 ring-1 ring-slate-700 transition group-hover:ring-blue-500/50">
-                <Icon className="h-6 w-6 text-slate-400 transition group-hover:text-blue-400" />
-              </div>
+              {/* Content */}
+              <div className="relative z-10 h-full flex flex-col">
+                {/* Top row: Icon + Badge */}
+                <div className="flex items-start justify-between">
+                  {/* Icon */}
+                  <div
+                    className={`
+                      tool-icon w-14 h-14 rounded-2xl flex items-center justify-center
+                      ${isFeatured
+                        ? 'icon-gradient shadow-lg shadow-blue-500/20'
+                        : 'bg-white/5 ring-1 ring-white/10 group-hover:ring-white/20'
+                      }
+                      transition-all duration-300 group-hover:scale-110
+                    `}
+                  >
+                    <Icon
+                      className={`w-7 h-7 ${isFeatured ? 'text-white' : 'text-slate-400 group-hover:text-white'} transition-colors duration-300`}
+                    />
+                  </div>
 
-              {/* Badge */}
-              <span className="relative z-10 mt-4 inline-flex w-fit rounded-full bg-blue-500/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-400">
-                {tool.badge}
-              </span>
+                  {/* Badge */}
+                  <span
+                    className={`
+                      inline-flex px-3 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-wider
+                      bg-gradient-to-r ${tool.gradient}
+                      text-white shadow-lg
+                    `}
+                  >
+                    {tool.badge}
+                  </span>
+                </div>
 
-              {/* Title & Description */}
-              <h2 className="relative z-10 mt-3 text-lg font-semibold text-white">
-                {tool.title}
-              </h2>
-              <p className="relative z-10 mt-2 text-sm text-slate-500">
-                {tool.description}
-              </p>
+                {/* Title & Description */}
+                <h2
+                  className={`
+                    mt-5 font-bold text-white transition-colors duration-300 group-hover:text-blue-400
+                    ${isFeatured ? 'text-xl md:text-2xl' : 'text-lg'}
+                  `}
+                >
+                  {tool.title}
+                </h2>
+                <p
+                  className={`
+                    mt-2 text-slate-400 leading-relaxed flex-grow
+                    ${isFeatured ? 'text-sm md:text-base' : 'text-sm'}
+                  `}
+                >
+                  {tool.description}
+                </p>
 
-              {/* CTA */}
-              <div className="relative z-10 mt-4 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 transition group-hover:text-blue-400">
-                Mở công cụ
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-slate-500 transition group-hover:bg-blue-500 group-hover:text-white">
-                  <ArrowRight className="h-3 w-3" />
-                </span>
+                {/* Stats (for featured) */}
+                {'stats' in tool && tool.stats && (
+                  <p className="mt-3 text-xs text-blue-400/80 font-medium">
+                    {tool.stats}
+                  </p>
+                )}
+
+                {/* CTA */}
+                <div className="mt-5 flex items-center gap-2 text-sm font-medium text-slate-500 transition-colors duration-300 group-hover:text-blue-400">
+                  <span>Mở công cụ</span>
+                  <div className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center transition-all duration-300 group-hover:bg-blue-500 group-hover:translate-x-1 group-hover:shadow-lg group-hover:shadow-blue-500/30">
+                    <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors duration-300" />
+                  </div>
+                </div>
               </div>
             </Link>
           );
         })}
       </section>
 
-      <section className="mt-12 grid gap-4 md:grid-cols-3">
-        {[
-          {
-            title: "Preset thông minh",
-            description: "Các mức FPS, width, quality được gợi ý sẵn theo use-case.",
-          },
-          {
-            title: "Realtime feedback",
-            description: "Thông báo tiến trình rõ ràng, hạn chế lỗi silent fail.",
-          },
-          {
-            title: "Ready for batch",
-            description: "Tải zip hàng loạt, rename tự động, an toàn.",
-          },
-        ].map((item, index) => (
-          <div
-            key={item.title}
-            style={{ animationDelay: `${index * 120}ms` }}
-            className="card animate-fade-up"
-          >
-            <p className="text-sm font-semibold text-white">{item.title}</p>
-            <p className="mt-2 text-xs text-slate-500">{item.description}</p>
-          </div>
-        ))}
+      {/* Features */}
+      <section className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4">
+        {features.map((item, index) => {
+          const Icon = item.icon;
+          return (
+            <div
+              key={item.title}
+              style={{ animationDelay: `${600 + index * 100}ms` }}
+              className="glass-card p-5 animate-fade-up hover:border-blue-500/30 transition-colors duration-300"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/10 flex items-center justify-center flex-shrink-0 ring-1 ring-blue-500/20">
+                  <Icon className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">{item.title}</p>
+                  <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
+                    {item.description}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </section>
 
       {/* Back to home */}
-      <div className="mt-10 text-center">
+      <div className="mt-12 text-center animate-fade-up" style={{ animationDelay: '900ms' }}>
         <Link
           href="/"
-          className="btn-secondary rounded-full cursor-pointer"
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white/5 text-slate-400 text-sm font-medium ring-1 ring-white/10 transition-all duration-300 hover:bg-white/10 hover:text-white hover:ring-blue-500/30 cursor-pointer group"
         >
-          ← Về trang chủ
+          <ArrowRight className="w-4 h-4 rotate-180 transition-transform duration-300 group-hover:-translate-x-1" />
+          Về trang chủ
         </Link>
       </div>
     </main>
