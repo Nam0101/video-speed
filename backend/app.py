@@ -31,6 +31,27 @@ try:
 except ImportError:
     HAS_LOTTIE = False
 
+# Lazy load rembg for background removal
+try:
+    from rembg import remove as rembg_remove, new_session as rembg_new_session
+    from PIL import Image
+    import io
+    HAS_REMBG = True
+except ImportError:
+    HAS_REMBG = False
+
+# Global rembg session for performance (lazy loaded)
+_REMBG_SESSION = None
+
+def _get_rembg_session():
+    """Get or create rembg session for performance optimization."""
+    global _REMBG_SESSION
+    if not HAS_REMBG:
+        return None
+    if _REMBG_SESSION is None:
+        _REMBG_SESSION = rembg_new_session()
+    return _REMBG_SESSION
+
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
@@ -1124,6 +1145,152 @@ def png_to_webp():
         download_name=Path(filename).stem + ".webp",
     )
 
+
+@app.post("/remove-background")
+def remove_background():
+    """Remove background from an uploaded PNG/JPG image using AI.
+    
+    Returns a PNG image with transparent background.
+    """
+    if not HAS_REMBG:
+        abort(500, "Thư viện rembg không được cài đặt. Vui lòng cài đặt 'rembg[cpu]'.")
+    
+    file = request.files.get("file")
+    if file is None or file.filename == "":
+        abort(400, "Thiếu file ảnh")
+
+    filename = file.filename
+    suffix = _allowed_image_suffix(filename)
+    if suffix is None:
+        abort(400, "Chỉ chấp nhận PNG/JPG/JPEG")
+
+    input_name = f"{uuid.uuid4().hex}{suffix}"
+    input_path = UPLOAD_DIR / input_name
+    output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.png"
+    file.save(input_path)
+
+    try:
+        # Read image
+        with open(input_path, 'rb') as f:
+            input_data = f.read()
+        
+        # Remove background using rembg with session reuse
+        session = _get_rembg_session()
+        output_data = rembg_remove(input_data, session=session)
+        
+        # Save output
+        with open(output_path, 'wb') as f:
+            f.write(output_data)
+            
+    except Exception as exc:
+        input_path.unlink(missing_ok=True)
+        output_path.unlink(missing_ok=True)
+        abort(500, f"Lỗi xử lý ảnh: {exc}")
+
+    @after_this_request
+    def cleanup(response):
+        input_path.unlink(missing_ok=True)
+        output_path.unlink(missing_ok=True)
+        return response
+
+    return send_file(
+        output_path,
+        mimetype="image/png",
+        as_attachment=True,
+        download_name=Path(filename).stem + "_nobg.png",
+    )
+
+
+@app.post("/remove-background-zip")
+def remove_background_zip():
+    """Remove background from multiple images and return as ZIP.
+    
+    Accepts multiple PNG/JPG files and returns a ZIP containing
+    PNG images with transparent backgrounds.
+    """
+    if not HAS_REMBG:
+        abort(500, "Thư viện rembg không được cài đặt. Vui lòng cài đặt 'rembg[cpu]'.")
+    
+    files = request.files.getlist("files")
+    if not files:
+        abort(400, "Thiếu danh sách ảnh (files)")
+
+    batch_dir = OUTPUT_DIR / f"rembg_{uuid.uuid4().hex}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = OUTPUT_DIR / f"nobg_{uuid.uuid4().hex}.zip"
+    
+    processed_files: list[tuple[str, Path]] = []
+
+    try:
+        # Get session once for all images
+        session = _get_rembg_session()
+        
+        for index, f in enumerate(files, start=1):
+            if f.filename is None or f.filename == "":
+                continue
+                
+            suffix = _allowed_image_suffix(f.filename)
+            if suffix is None:
+                continue  # Skip unsupported files
+            
+            # Save input file
+            input_path = batch_dir / f"input_{index:04d}{suffix}"
+            f.save(input_path)
+            
+            try:
+                # Read and process image
+                with open(input_path, 'rb') as fp:
+                    input_data = fp.read()
+                
+                output_data = rembg_remove(input_data, session=session)
+                
+                # Save output
+                output_name = _safe_zip_entry_name_with_ext(
+                    Path(f.filename).stem + "_nobg",
+                    index=index,
+                    ext="png"
+                )
+                output_path = batch_dir / output_name
+                with open(output_path, 'wb') as fp:
+                    fp.write(output_data)
+                
+                processed_files.append((output_name, output_path))
+                
+            except Exception as e:
+                print(f"Warning: Failed to process {f.filename}: {e}")
+                continue
+            finally:
+                input_path.unlink(missing_ok=True)
+
+        if not processed_files:
+            abort(400, "Không có ảnh nào được xử lý thành công")
+
+        # Create ZIP file
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for name, path in processed_files:
+                zf.write(path, arcname=name)
+
+    except HTTPException:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        zip_path.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        zip_path.unlink(missing_ok=True)
+        abort(500, f"Lỗi xử lý: {exc}")
+
+    @after_this_request
+    def cleanup(response):
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        zip_path.unlink(missing_ok=True)
+        return response
+
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"nobg_{len(processed_files)}_images.zip",
+    )
 
 @app.post("/images-to-animated-webp")
 def images_to_animated_webp():

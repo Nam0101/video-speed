@@ -296,6 +296,38 @@ class APIClient {
         return response.blob();
     }
 
+    async removeBackground(file: File): Promise<Blob> {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch(`${this.baseURL}/remove-background`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        return response.blob();
+    }
+
+    async removeBackgroundZip(files: File[]): Promise<Blob> {
+        const formData = new FormData();
+        files.forEach((file) => formData.append('files', file));
+
+        const response = await fetch(`${this.baseURL}/remove-background-zip`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        return response.blob();
+    }
+
     async batchAnimatedResizeZip(
         files: File[],
         options: {

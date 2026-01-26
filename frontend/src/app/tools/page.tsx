@@ -14,6 +14,7 @@ import {
   Wrench,
   Clock,
   TrendingUp,
+  Eraser,
 } from "lucide-react";
 
 const tools = [
@@ -45,6 +46,16 @@ const tools = [
     badge: "Motion",
     gradient: "from-orange-400 via-rose-500 to-pink-500",
     featured: false,
+  },
+  {
+    title: "Remove Background",
+    description: "Xóa nền ảnh tự động bằng AI, output PNG trong suốt.",
+    href: "/tools/remove-bg",
+    icon: Eraser,
+    badge: "AI",
+    gradient: "from-violet-500 via-purple-500 to-fuchsia-500",
+    featured: true,
+    stats: "AI Powered",
   },
   {
     title: "Convert → TGS",
@@ -86,7 +97,7 @@ const tools = [
 ];
 
 const stats = [
-  { icon: Wrench, value: "7", label: "Tools" },
+  { icon: Wrench, value: "8", label: "Tools" },
   { icon: Clock, value: "24/7", label: "Available" },
   { icon: TrendingUp, value: "99.9%", label: "Uptime" },
 ];

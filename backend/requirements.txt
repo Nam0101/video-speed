@@ -4,3 +4,4 @@ Werkzeug>=3.0.0
 Pillow>=10.2.0
 lottie>=0.7.0
 gunicorn>=21.2.0
+rembg[cpu]>=2.0.70
