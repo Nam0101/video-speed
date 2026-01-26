@@ -40,17 +40,53 @@ try:
 except ImportError:
     HAS_REMBG = False
 
-# Global rembg session for performance (lazy loaded)
-_REMBG_SESSION = None
+import time
+import threading
+import gc
+
+# ----------------- Rembg Session Manager -----------------
+
+class RembgSessionManager:
+    def __init__(self, timeout_seconds=300):
+        self._session = None
+        self._last_accessed = 0
+        self._timeout = timeout_seconds
+        self._lock = threading.Lock()
+        self._cleanup_timer = None
+    
+    def get_session(self):
+        with self._lock:
+            self._last_accessed = time.time()
+            if self._session is None:
+                if HAS_REMBG:
+                    print("Initializing rembg session...")
+                    self._session = rembg_new_session("u2net")
+                else:
+                    return None
+            
+            # Restart cleanup timer
+            self._schedule_cleanup()
+            return self._session
+    
+    def _schedule_cleanup(self):
+        if self._cleanup_timer is not None:
+            self._cleanup_timer.cancel()
+        
+        self._cleanup_timer = threading.Timer(self._timeout, self._cleanup)
+        self._cleanup_timer.daemon = True
+        self._cleanup_timer.start()
+        
+    def _cleanup(self):
+        with self._lock:
+            if self._session and (time.time() - self._last_accessed >= self._timeout):
+                print("Freeing rembg session due to inactivity...")
+                self._session = None
+                gc.collect() # Force garbage collection
+
+_rembg_manager = RembgSessionManager(timeout_seconds=300) # 5 minutes
 
 def _get_rembg_session():
-    """Get or create rembg session for performance optimization."""
-    global _REMBG_SESSION
-    if not HAS_REMBG:
-        return None
-    if _REMBG_SESSION is None:
-        _REMBG_SESSION = rembg_new_session()
-    return _REMBG_SESSION
+    return _rembg_manager.get_session()
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -61,13 +97,17 @@ for directory in (UPLOAD_DIR, OUTPUT_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 # Auto-detect ffmpeg path (works on Mac/Homebrew and Linux)
-FFMPEG_PATH = shutil.which("ffmpeg") or FFMPEG_PATH
-if not Path(FFMPEG_PATH).exists():
+FFMPEG_PATH = shutil.which("ffmpeg")
+if not FFMPEG_PATH:
     # Fallback paths
-    for path in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", FFMPEG_PATH]:
+    for path in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg", "/bin/ffmpeg"]:
         if Path(path).exists():
             FFMPEG_PATH = path
             break
+
+if not FFMPEG_PATH or not Path(FFMPEG_PATH).exists():
+    print("WARNING: ffmpeg not found in PATH. Video conversion features will fail.")
+    FFMPEG_PATH = "ffmpeg" # fallback to hope it works later or raises clearer error
 
 MIN_FPS = 1
 MAX_FPS = 60
