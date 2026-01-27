@@ -2086,6 +2086,7 @@ def batch_to_webp_zip():
     
     Accepts multiple files and/or ZIP archives containing these file types.
     Returns a ZIP with all files converted to WebP format.
+    Files that fail to convert are skipped and reported in the response.
     """
     files = request.files.getlist("files")
     if not files:
@@ -2113,8 +2114,12 @@ def batch_to_webp_zip():
 
     SUPPORTED_EXTENSIONS = {".tgs", ".webm", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
+    # Track failed files
+    failed_files: list[dict] = []
+    successful_files: list[str] = []
+
     def process_single_file(input_path: Path, original_name: str, index: int) -> Path | None:
-        """Process a single file and return output path or None if unsupported."""
+        """Process a single file and return output path or None if failed."""
         suffix = input_path.suffix.lower()
         output_name = _safe_zip_entry_name(Path(original_name).stem, index=index)
         output_path = batch_dir / output_name
@@ -2128,6 +2133,7 @@ def batch_to_webp_zip():
                     _convert_video_to_animated_webp(gif_path, fps=fps, width=width, loop=0, output_path=output_path)
                     gif_path.unlink(missing_ok=True)
                 else:
+                    failed_files.append({"file": original_name, "error": "Thiếu thư viện lottie để xử lý TGS"})
                     return None
             elif suffix == ".webm":
                 # WebM → animated WebP
@@ -2139,9 +2145,13 @@ def batch_to_webp_zip():
                 # Static image → WebP
                 _convert_image(input_path, target="webp", width=width, quality=quality, lossless=(suffix == ".png"), output_path=output_path)
             else:
+                failed_files.append({"file": original_name, "error": f"Định dạng không được hỗ trợ: {suffix}"})
                 return None
+            successful_files.append(original_name)
             return output_path
         except Exception as e:
+            error_msg = str(e) if str(e) else "Lỗi không xác định khi chuyển đổi"
+            failed_files.append({"file": original_name, "error": error_msg})
             print(f"[DEBUG] process_single_file error for {original_name}: {e}")
             import traceback
             traceback.print_exc()
@@ -2172,6 +2182,7 @@ def batch_to_webp_zip():
                                 continue
                             member_suffix = Path(member).suffix.lower()
                             if member_suffix not in SUPPORTED_EXTENSIONS:
+                                failed_files.append({"file": Path(member).name, "error": f"Định dạng không được hỗ trợ: {member_suffix}"})
                                 continue
                             
                             # Extract file
@@ -2184,6 +2195,8 @@ def batch_to_webp_zip():
                             if result:
                                 output_paths.append(result)
                             extracted.unlink(missing_ok=True)
+                except zipfile.BadZipFile:
+                    failed_files.append({"file": f.filename, "error": "File ZIP không hợp lệ hoặc bị hỏng"})
                 finally:
                     shutil.rmtree(extract_dir, ignore_errors=True)
                     zip_input.unlink(missing_ok=True)
@@ -2198,9 +2211,20 @@ def batch_to_webp_zip():
                 if result:
                     output_paths.append(result)
                 input_path.unlink(missing_ok=True)
+            else:
+                failed_files.append({"file": f.filename, "error": f"Định dạng không được hỗ trợ: {suffix}"})
 
         if not output_paths:
-            abort(400, "Không có file hợp lệ")
+            # All files failed - return error with details
+            error_response = {
+                "success": False,
+                "error": "Không có file nào được chuyển đổi thành công",
+                "failed_files": failed_files,
+                "successful_count": 0,
+                "failed_count": len(failed_files)
+            }
+            shutil.rmtree(batch_dir, ignore_errors=True)
+            return jsonify(error_response), 400
 
         # Create output ZIP
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -2214,6 +2238,26 @@ def batch_to_webp_zip():
         shutil.rmtree(batch_dir, ignore_errors=True)
         abort(500, f"Lỗi chuyển đổi: {exc}")
 
+    # If there are failed files, return JSON with download info
+    if failed_files:
+        # Store zip for download and return JSON response
+        zip_id = uuid.uuid4().hex
+        final_zip_path = OUTPUT_DIR / f"batch_webp_{zip_id}.zip"
+        shutil.copy(zip_path, final_zip_path)
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        
+        response_data = {
+            "success": True,
+            "message": f"Đã chuyển đổi {len(output_paths)} file thành công, {len(failed_files)} file bị lỗi",
+            "successful_count": len(output_paths),
+            "successful_files": successful_files,
+            "failed_count": len(failed_files),
+            "failed_files": failed_files,
+            "download_id": zip_id,
+            "download_url": f"/download-batch-webp/{zip_id}"
+        }
+        return jsonify(response_data), 200
+
     @after_this_request
     def cleanup(response):
         shutil.rmtree(batch_dir, ignore_errors=True)
@@ -2224,6 +2268,30 @@ def batch_to_webp_zip():
         mimetype="application/zip",
         as_attachment=True,
         download_name=f"batch_webp_{len(output_paths)}.zip",
+    )
+
+
+@app.get("/download-batch-webp/<zip_id>")
+def download_batch_webp(zip_id: str):
+    """Download a batch converted WebP ZIP file by its ID."""
+    # Validate zip_id format (hex string)
+    if not zip_id or not all(c in '0123456789abcdef' for c in zip_id.lower()):
+        abort(400, "ID không hợp lệ")
+    
+    zip_path = OUTPUT_DIR / f"batch_webp_{zip_id}.zip"
+    if not zip_path.exists():
+        abort(404, "File không tồn tại hoặc đã hết hạn")
+    
+    @after_this_request
+    def cleanup(response):
+        zip_path.unlink(missing_ok=True)
+        return response
+    
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"batch_webp.zip",
     )
 
 

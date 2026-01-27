@@ -37,16 +37,25 @@ const StatusNotice = ({ status }: { status: string }) => {
     };
 
     const tone = toneClasses[statusType as keyof typeof toneClasses] || toneClasses.default;
+    const lines = statusMessage.split('\n');
 
     return (
         <div className={`rounded-2xl border px-4 py-3 text-sm shadow-sm ${tone}`}>
-            <div className="flex items-center gap-3">
-                {statusType === "error" && <AlertCircle className="h-5 w-5" />}
-                {statusType === "success" && <CheckCircle2 className="h-5 w-5" />}
-                {statusType === "processing" && (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                )}
-                <span className="font-medium">{statusMessage}</span>
+            <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 mt-0.5">
+                    {statusType === "error" && <AlertCircle className="h-5 w-5" />}
+                    {statusType === "success" && <CheckCircle2 className="h-5 w-5" />}
+                    {statusType === "processing" && (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                    )}
+                </div>
+                <div className="flex-1 min-w-0">
+                    {lines.map((line, index) => (
+                        <p key={index} className={`font-medium ${index > 0 ? 'mt-1 text-xs opacity-80' : ''}`}>
+                            {line}
+                        </p>
+                    ))}
+                </div>
             </div>
         </div>
     );
@@ -152,13 +161,42 @@ export default function UniversalConverterPage() {
         try {
             setIsProcessing(true);
             setStatus("processing:Đang xử lý và convert sang WebP...");
-            const blob = await apiClient.batchToWebpZip(files, {
+            const result = await apiClient.batchToWebpZip(files, {
                 width: parseOptionalNumber(width),
                 fps: parseOptionalNumber(fps),
                 quality: parseOptionalNumber(quality),
             });
-            downloadBlob(blob, `converted_webp_${files.length}.zip`);
-            setStatus("success:Đã tải xong! ZIP chứa các file WebP.");
+
+            if (!result.success) {
+                // All files failed
+                const failedInfo = result.failedFiles
+                    .slice(0, 5)
+                    .map(f => `• ${f.file}: ${f.error}`)
+                    .join('\n');
+                const moreInfo = result.failedCount > 5
+                    ? `\n... và ${result.failedCount - 5} file khác`
+                    : '';
+                setStatus(`error:Không có file nào được convert thành công.\n${failedInfo}${moreInfo}`);
+                return;
+            }
+
+            if (result.blob) {
+                downloadBlob(result.blob, `converted_webp_${result.successfulCount}.zip`);
+            }
+
+            if (result.failedCount > 0) {
+                // Partial success - some files failed
+                const failedInfo = result.failedFiles
+                    .slice(0, 3)
+                    .map(f => `• ${f.file}: ${f.error}`)
+                    .join('\n');
+                const moreInfo = result.failedCount > 3
+                    ? `\n... và ${result.failedCount - 3} file khác bị lỗi`
+                    : '';
+                setStatus(`success:Đã convert ${result.successfulCount} file thành công.\n⚠️ ${result.failedCount} file bị lỗi:\n${failedInfo}${moreInfo}`);
+            } else {
+                setStatus(`success:Đã tải xong! ZIP chứa ${result.successfulCount} file WebP.`);
+            }
         } catch (error) {
             setStatus(
                 `error:${error instanceof Error ? error.message : "Có lỗi xảy ra"}`
