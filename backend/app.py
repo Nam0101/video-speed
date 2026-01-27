@@ -1480,6 +1480,10 @@ def gif_to_webp():
 
 @app.post("/images-to-webp-zip")
 def images_to_webp_zip():
+    """Convert multiple PNG/JPG images to WebP and return as ZIP.
+    
+    Files that fail to convert are skipped and reported in the response.
+    """
     files = request.files.getlist("files")
     if not files:
         abort(400, "Thiếu danh sách ảnh (files)")
@@ -1488,38 +1492,80 @@ def images_to_webp_zip():
     batch_dir.mkdir(parents=True, exist_ok=True)
     zip_path = batch_dir / "webp_images.zip"
 
+    # Track failed files
+    failed_files: list[dict] = []
+    successful_files: list[str] = []
     output_paths: list[Path] = []
+    
     try:
         for index, f in enumerate(files, start=1):
             if f.filename is None or f.filename == "":
                 continue
             suffix = _allowed_image_suffix(f.filename)
             if suffix is None:
-                abort(400, "Chỉ chấp nhận PNG/JPG/JPEG (trong danh sách ảnh)")
+                failed_files.append({"file": f.filename, "error": "Định dạng không hỗ trợ (chỉ PNG/JPG/JPEG)"})
+                continue
 
             input_path = batch_dir / f"input_{index:04d}{suffix}"
             f.save(input_path)
 
-            output_name = _safe_zip_entry_name(Path(f.filename).stem, index=index)
-            output_path = batch_dir / output_name
-            _convert_image_to_webp(input_path, lossless=(suffix == ".png"), output_path=output_path)
-            output_paths.append(output_path)
+            try:
+                output_name = _safe_zip_entry_name(Path(f.filename).stem, index=index)
+                output_path = batch_dir / output_name
+                _convert_image_to_webp(input_path, lossless=(suffix == ".png"), output_path=output_path)
+                output_paths.append(output_path)
+                successful_files.append(f.filename)
+            except Exception as e:
+                error_msg = str(e) if str(e) else "Lỗi không xác định khi chuyển đổi"
+                failed_files.append({"file": f.filename, "error": error_msg})
+                print(f"[DEBUG] images_to_webp_zip error for {f.filename}: {e}")
+            finally:
+                input_path.unlink(missing_ok=True)
 
         if not output_paths:
-            abort(400, "Không có ảnh hợp lệ")
+            # All files failed
+            error_response = {
+                "success": False,
+                "error": "Không có file nào được chuyển đổi thành công",
+                "failed_files": failed_files,
+                "successful_count": 0,
+                "failed_count": len(failed_files)
+            }
+            shutil.rmtree(batch_dir, ignore_errors=True)
+            return jsonify(error_response), 400
 
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for output_path in output_paths:
                 zf.write(output_path, arcname=output_path.name)
+                
     except HTTPException:
         shutil.rmtree(batch_dir, ignore_errors=True)
         raise
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         shutil.rmtree(batch_dir, ignore_errors=True)
         abort(500, f"Lỗi ffmpeg/zip: {exc}")
 
+    # If there are failed files, return JSON with download info
+    if failed_files:
+        zip_id = uuid.uuid4().hex
+        final_zip_path = OUTPUT_DIR / f"images_webp_{zip_id}.zip"
+        shutil.copy(zip_path, final_zip_path)
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        
+        response_data = {
+            "success": True,
+            "message": f"Đã chuyển đổi {len(output_paths)} file thành công, {len(failed_files)} file bị lỗi",
+            "successful_count": len(output_paths),
+            "successful_files": successful_files,
+            "failed_count": len(failed_files),
+            "failed_files": failed_files,
+            "download_id": zip_id,
+            "download_url": f"/download-images-webp/{zip_id}"
+        }
+        return jsonify(response_data), 200
+
     @after_this_request
-    def cleanup(response):  # type: ignore
+    def cleanup(response):
         shutil.rmtree(batch_dir, ignore_errors=True)
         return response
 
@@ -1528,6 +1574,29 @@ def images_to_webp_zip():
         mimetype="application/zip",
         as_attachment=True,
         download_name=f"images_{len(output_paths)}_webp.zip",
+    )
+
+
+@app.get("/download-images-webp/<zip_id>")
+def download_images_webp(zip_id: str):
+    """Download a converted images WebP ZIP file by its ID."""
+    if not zip_id or not all(c in '0123456789abcdef' for c in zip_id.lower()):
+        abort(400, "ID không hợp lệ")
+    
+    zip_path = OUTPUT_DIR / f"images_webp_{zip_id}.zip"
+    if not zip_path.exists():
+        abort(404, "File không tồn tại hoặc đã hết hạn")
+    
+    @after_this_request
+    def cleanup(response):
+        zip_path.unlink(missing_ok=True)
+        return response
+    
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"images_webp.zip",
     )
 
 

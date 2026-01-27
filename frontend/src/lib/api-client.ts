@@ -216,7 +216,7 @@ class APIClient {
         return response.blob();
     }
 
-    async imagesToWebPZip(files: File[]): Promise<Blob> {
+    async imagesToWebPZip(files: File[]): Promise<BatchToWebpResult> {
         const formData = new FormData();
         files.forEach((file) => formData.append('files', file));
 
@@ -225,11 +225,57 @@ class APIClient {
             body: formData,
         });
 
+        const contentType = response.headers.get('content-type') || '';
+
+        // Check if response is JSON (partial success or all failed)
+        if (contentType.includes('application/json')) {
+            const jsonData = await response.json();
+
+            if (!response.ok) {
+                // All files failed
+                return {
+                    success: false,
+                    blob: null,
+                    successfulCount: 0,
+                    failedCount: jsonData.failed_count || 0,
+                    failedFiles: jsonData.failed_files || [],
+                    error: jsonData.error || 'Có lỗi xảy ra',
+                };
+            }
+
+            // Partial success - need to download from URL
+            const downloadUrl = `${this.baseURL}${jsonData.download_url}`;
+            const downloadResponse = await fetch(downloadUrl);
+
+            if (!downloadResponse.ok) {
+                throw new Error('Không thể tải file ZIP');
+            }
+
+            const blob = await downloadResponse.blob();
+            return {
+                success: true,
+                blob,
+                successfulCount: jsonData.successful_count || 0,
+                successfulFiles: jsonData.successful_files || [],
+                failedCount: jsonData.failed_count || 0,
+                failedFiles: jsonData.failed_files || [],
+                message: jsonData.message,
+            };
+        }
+
+        // Full success - direct blob response
         if (!response.ok) {
             throw new Error(await response.text());
         }
 
-        return response.blob();
+        const blob = await response.blob();
+        return {
+            success: true,
+            blob,
+            successfulCount: files.length,
+            failedCount: 0,
+            failedFiles: [],
+        };
     }
 
     async imagesConvertZip(
