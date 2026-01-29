@@ -5,6 +5,7 @@ import {
   ImageIcon,
   Layers,
   MessageCircle,
+  Music,
   Sparkles,
   Video,
   ArrowRight,
@@ -76,6 +77,15 @@ const tools = [
     featured: false,
   },
   {
+    title: "Audio to OGG",
+    description: "Convert MP3, WAV, FLAC, AAC sang OGG. Batch với ZIP export.",
+    href: "/tools/audio-ogg",
+    icon: Music,
+    badge: "Audio",
+    gradient: "from-rose-500 via-pink-500 to-fuchsia-500",
+    featured: false,
+  },
+  {
     title: "Android Logs",
     description: "Theo dõi log Android realtime.",
     href: "/tools/logs",
@@ -97,7 +107,7 @@ const tools = [
 ];
 
 const stats = [
-  { icon: Wrench, value: "8", label: "Tools" },
+  { icon: Wrench, value: "9", label: "Tools" },
   { icon: Clock, value: "24/7", label: "Available" },
   { icon: TrendingUp, value: "99.9%", label: "Uptime" },
 ];

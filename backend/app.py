@@ -313,6 +313,14 @@ def _allowed_gif_suffix(filename: str) -> str | None:
     return None
 
 
+def _allowed_audio_suffix(filename: str) -> str | None:
+    """Check if filename has a supported audio extension."""
+    suffix = (Path(filename).suffix or "").lower()
+    if suffix in {".mp3", ".wav", ".aac", ".flac", ".m4a", ".ogg", ".wma", ".opus"}:
+        return suffix
+    return None
+
+
 _ZIP_NAME_SAFE_RE = re.compile(r"[^a-zA-Z0-9._-]+")
 
 
@@ -328,7 +336,7 @@ def _safe_zip_entry_name_with_ext(raw_stem: str, *, index: int, ext: str) -> str
     ext = (ext or "").lower().strip()
     if not ext.startswith("."):
         ext = f".{ext}"
-    if ext not in {".webp", ".png", ".jpg", ".gif", ".tgs"}:
+    if ext not in {".webp", ".png", ".jpg", ".gif", ".tgs", ".ogg"}:
         ext = ".png"
     return f"{stem}{ext}"
 
@@ -3370,6 +3378,294 @@ def analytics_stats():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------- Audio to OGG Conversion -------------------------
+
+def _convert_audio_to_ogg(
+    input_path: Path,
+    *,
+    bitrate: int = 128,
+    sample_rate: int | None = None,
+    output_path: Path | None = None,
+) -> Path:
+    """Convert audio file to OGG (Vorbis) format using FFmpeg.
+    
+    Args:
+        input_path: Path to input audio file
+        bitrate: Target bitrate in kbps (default 128)
+        sample_rate: Optional sample rate in Hz (e.g., 44100, 48000)
+        output_path: Optional output path, auto-generated if None
+    
+    Returns:
+        Path to the converted OGG file
+    """
+    if output_path is None:
+        output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.ogg"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    cmd: list[str] = [FFMPEG_PATH, "-y", "-i", str(input_path)]
+    
+    # Audio codec settings
+    cmd += ["-c:a", "libvorbis", "-b:a", f"{bitrate}k"]
+    
+    if sample_rate is not None:
+        cmd += ["-ar", str(sample_rate)]
+    
+    # Remove video stream if any
+    cmd += ["-vn"]
+    
+    cmd.append(str(output_path))
+    _run_ffmpeg(cmd)
+    return output_path
+
+
+@app.post("/audio-to-ogg")
+def audio_to_ogg():
+    """Convert a single audio file to OGG (Vorbis) format."""
+    file = request.files.get("file")
+    if file is None or file.filename == "":
+        abort(400, "Thiếu file audio")
+    
+    suffix = _allowed_audio_suffix(file.filename)
+    if suffix is None:
+        abort(400, "Định dạng không được hỗ trợ. Hỗ trợ: MP3, WAV, AAC, FLAC, M4A, OGG, WMA, OPUS")
+    
+    # Optional bitrate (default 128 kbps)
+    bitrate_raw = request.form.get("bitrate")
+    bitrate: int = 128
+    if bitrate_raw not in (None, "", "0"):
+        bitrate = _validate_positive_int(bitrate_raw, name="Bitrate", min_value=32, max_value=320)
+    
+    # Optional sample rate
+    sample_rate_raw = request.form.get("sample_rate")
+    sample_rate: int | None = None
+    if sample_rate_raw not in (None, "", "0"):
+        sample_rate = _validate_positive_int(sample_rate_raw, name="Sample Rate", min_value=8000, max_value=96000)
+    
+    input_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
+    file.save(input_path)
+    
+    try:
+        output_path = _convert_audio_to_ogg(
+            input_path,
+            bitrate=bitrate,
+            sample_rate=sample_rate,
+        )
+    except Exception as exc:
+        input_path.unlink(missing_ok=True)
+        abort(500, f"Lỗi convert audio: {exc}")
+    
+    @after_this_request
+    def cleanup(response):
+        input_path.unlink(missing_ok=True)
+        output_path.unlink(missing_ok=True)
+        return response
+    
+    return send_file(
+        output_path,
+        mimetype="audio/ogg",
+        as_attachment=True,
+        download_name=Path(file.filename).stem + ".ogg",
+    )
+
+
+@app.post("/batch-audio-to-ogg-zip")
+def batch_audio_to_ogg_zip():
+    """Batch convert audio files to OGG and return as ZIP.
+    
+    Supports: MP3, WAV, AAC, FLAC, M4A, OGG, WMA, OPUS
+    Returns a ZIP file with all audio files converted to OGG format.
+    Files that fail to convert are skipped and reported in the response.
+    """
+    files = request.files.getlist("files")
+    if not files:
+        abort(400, "Thiếu danh sách file audio (files)")
+    
+    # Optional bitrate (default 128 kbps)
+    bitrate_raw = request.form.get("bitrate")
+    bitrate: int = 128
+    if bitrate_raw not in (None, "", "0"):
+        bitrate = _validate_positive_int(bitrate_raw, name="Bitrate", min_value=32, max_value=320)
+    
+    # Optional sample rate
+    sample_rate_raw = request.form.get("sample_rate")
+    sample_rate: int | None = None
+    if sample_rate_raw not in (None, "", "0"):
+        sample_rate = _validate_positive_int(sample_rate_raw, name="Sample Rate", min_value=8000, max_value=96000)
+    
+    batch_dir = OUTPUT_DIR / f"audio_ogg_{uuid.uuid4().hex}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = batch_dir / "converted_ogg.zip"
+    
+    SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".aac", ".flac", ".m4a", ".ogg", ".wma", ".opus"}
+    
+    failed_files: list[dict] = []
+    successful_files: list[str] = []
+    output_paths: list[Path] = []
+    
+    def process_audio_file(input_path: Path, original_name: str, index: int) -> Path | None:
+        """Process a single audio file and return output path or None if failed."""
+        try:
+            output_name = _safe_zip_entry_name_with_ext(Path(original_name).stem, index=index, ext=".ogg")
+            output_path = batch_dir / output_name
+            
+            _convert_audio_to_ogg(
+                input_path,
+                bitrate=bitrate,
+                sample_rate=sample_rate,
+                output_path=output_path,
+            )
+            successful_files.append(original_name)
+            return output_path
+        except Exception as e:
+            error_msg = str(e) if str(e) else "Lỗi không xác định khi chuyển đổi"
+            failed_files.append({"file": original_name, "error": error_msg})
+            print(f"[DEBUG] process_audio_file error for {original_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    file_index = 0
+    
+    try:
+        for f in files:
+            if f.filename is None or f.filename == "":
+                continue
+            
+            suffix = Path(f.filename).suffix.lower()
+            
+            if suffix == ".zip":
+                # Handle ZIP file - extract and process audio contents
+                zip_input = batch_dir / f"input_{uuid.uuid4().hex}.zip"
+                f.save(zip_input)
+                
+                extract_dir = batch_dir / f"extract_{uuid.uuid4().hex}"
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                
+                try:
+                    with zipfile.ZipFile(zip_input, "r") as zf:
+                        for member in zf.namelist():
+                            if member.endswith("/"):  # Skip directories
+                                continue
+                            member_suffix = Path(member).suffix.lower()
+                            if member_suffix not in SUPPORTED_EXTENSIONS:
+                                failed_files.append({
+                                    "file": Path(member).name,
+                                    "error": f"Định dạng không được hỗ trợ: {member_suffix}"
+                                })
+                                continue
+                            
+                            # Extract file
+                            extracted = extract_dir / Path(member).name
+                            with zf.open(member) as src, open(extracted, "wb") as dst:
+                                dst.write(src.read())
+                            
+                            file_index += 1
+                            result = process_audio_file(extracted, Path(member).name, file_index)
+                            if result:
+                                output_paths.append(result)
+                            extracted.unlink(missing_ok=True)
+                except zipfile.BadZipFile:
+                    failed_files.append({"file": f.filename, "error": "File ZIP không hợp lệ hoặc bị hỏng"})
+                finally:
+                    shutil.rmtree(extract_dir, ignore_errors=True)
+                    zip_input.unlink(missing_ok=True)
+            
+            elif suffix in SUPPORTED_EXTENSIONS:
+                # Direct audio file processing
+                input_path = batch_dir / f"input_{uuid.uuid4().hex}{suffix}"
+                f.save(input_path)
+                
+                file_index += 1
+                result = process_audio_file(input_path, f.filename, file_index)
+                if result:
+                    output_paths.append(result)
+                input_path.unlink(missing_ok=True)
+            else:
+                failed_files.append({
+                    "file": f.filename,
+                    "error": f"Định dạng không được hỗ trợ: {suffix}. Hỗ trợ: MP3, WAV, AAC, FLAC, M4A, OGG, WMA, OPUS"
+                })
+        
+        if not output_paths:
+            # All files failed - return error with details
+            error_response = {
+                "success": False,
+                "error": "Không có file nào được chuyển đổi thành công",
+                "failed_files": failed_files,
+                "successful_count": 0,
+                "failed_count": len(failed_files)
+            }
+            shutil.rmtree(batch_dir, ignore_errors=True)
+            return jsonify(error_response), 400
+        
+        # Create output ZIP
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for output_path in output_paths:
+                zf.write(output_path, arcname=output_path.name)
+    
+    except HTTPException:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        raise
+    except Exception as exc:
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        abort(500, f"Lỗi chuyển đổi audio: {exc}")
+    
+    # If there are failed files, return JSON with download info
+    if failed_files:
+        zip_id = uuid.uuid4().hex
+        final_zip_path = OUTPUT_DIR / f"audio_ogg_{zip_id}.zip"
+        shutil.copy(zip_path, final_zip_path)
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        
+        response_data = {
+            "success": True,
+            "message": f"Đã chuyển đổi {len(output_paths)} file thành công, {len(failed_files)} file bị lỗi",
+            "successful_count": len(output_paths),
+            "successful_files": successful_files,
+            "failed_count": len(failed_files),
+            "failed_files": failed_files,
+            "download_id": zip_id,
+            "download_url": f"/download-audio-ogg/{zip_id}"
+        }
+        return jsonify(response_data), 200
+    
+    @after_this_request
+    def cleanup(response):
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        return response
+    
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"audio_ogg_{len(output_paths)}.zip",
+    )
+
+
+@app.get("/download-audio-ogg/<zip_id>")
+def download_audio_ogg(zip_id: str):
+    """Download a batch converted audio OGG ZIP file by its ID."""
+    # Validate zip_id format (hex string)
+    if not zip_id or not all(c in '0123456789abcdef' for c in zip_id.lower()):
+        abort(400, "ID không hợp lệ")
+    
+    zip_path = OUTPUT_DIR / f"audio_ogg_{zip_id}.zip"
+    if not zip_path.exists():
+        abort(404, "File không tồn tại hoặc đã hết hạn")
+    
+    @after_this_request
+    def cleanup(response):
+        zip_path.unlink(missing_ok=True)
+        return response
+    
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"audio_ogg.zip",
+    )
 
 
 

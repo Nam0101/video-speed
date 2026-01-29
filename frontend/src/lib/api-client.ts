@@ -522,6 +522,100 @@ class APIClient {
         };
     }
 
+    async audioToOgg(
+        file: File,
+        options?: {
+            bitrate?: number;
+            sampleRate?: number;
+        }
+    ): Promise<Blob> {
+        const formData = new FormData();
+        formData.append('file', file);
+        if (options?.bitrate) formData.append('bitrate', options.bitrate.toString());
+        if (options?.sampleRate) formData.append('sample_rate', options.sampleRate.toString());
+
+        const response = await fetch(`${this.baseURL}/audio-to-ogg`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        return response.blob();
+    }
+
+    async batchAudioToOggZip(
+        files: File[],
+        options?: {
+            bitrate?: number;
+            sampleRate?: number;
+        }
+    ): Promise<BatchToWebpResult> {
+        const formData = new FormData();
+        files.forEach((file) => formData.append('files', file));
+        if (options?.bitrate) formData.append('bitrate', options.bitrate.toString());
+        if (options?.sampleRate) formData.append('sample_rate', options.sampleRate.toString());
+
+        const response = await fetch(`${this.baseURL}/batch-audio-to-ogg-zip`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+
+        // Check if response is JSON (partial success or all failed)
+        if (contentType.includes('application/json')) {
+            const jsonData = await response.json();
+
+            if (!response.ok) {
+                // All files failed
+                return {
+                    success: false,
+                    blob: null,
+                    successfulCount: 0,
+                    failedCount: jsonData.failed_count || 0,
+                    failedFiles: jsonData.failed_files || [],
+                    error: jsonData.error || 'Có lỗi xảy ra',
+                };
+            }
+
+            // Partial success - need to download from URL
+            const downloadUrl = `${this.baseURL}${jsonData.download_url}`;
+            const downloadResponse = await fetch(downloadUrl);
+
+            if (!downloadResponse.ok) {
+                throw new Error('Không thể tải file ZIP');
+            }
+
+            const blob = await downloadResponse.blob();
+            return {
+                success: true,
+                blob,
+                successfulCount: jsonData.successful_count || 0,
+                successfulFiles: jsonData.successful_files || [],
+                failedCount: jsonData.failed_count || 0,
+                failedFiles: jsonData.failed_files || [],
+                message: jsonData.message,
+            };
+        }
+
+        // Full success - direct blob response
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        const blob = await response.blob();
+        return {
+            success: true,
+            blob,
+            successfulCount: files.length,
+            failedCount: 0,
+            failedFiles: [],
+        };
+    }
+
     async getTracking(page = 1, limit = 100): Promise<TrackingResponse> {
         const response = await fetch(
             `${ANALYTICS_BASE_URL}/api/analytics/v1/tracking?page=${page}&limit=${limit}`,
