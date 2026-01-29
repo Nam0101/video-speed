@@ -28,6 +28,7 @@ export default function RemoveBackgroundPage() {
     const [dragActive, setDragActive] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [resultUrl, setResultUrl] = useState<string | null>(null);
+    const [removeAlpha, setRemoveAlpha] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleDrag = useCallback((event: React.DragEvent) => {
@@ -47,7 +48,7 @@ export default function RemoveBackgroundPage() {
             setDragActive(false);
 
             const droppedFiles = Array.from(event.dataTransfer.files).filter((f) =>
-                /\.(png|jpe?g)$/i.test(f.name)
+                /\.(png|jpe?g|webp)$/i.test(f.name)
             );
 
             if (mode === "single" && droppedFiles[0]) {
@@ -66,7 +67,7 @@ export default function RemoveBackgroundPage() {
     const handleFileChange = useCallback(
         (event: React.ChangeEvent<HTMLInputElement>) => {
             const selectedFiles = Array.from(event.target.files || []).filter((f) =>
-                /\.(png|jpe?g)$/i.test(f.name)
+                /\.(png|jpe?g|webp)$/i.test(f.name)
             );
 
             if (mode === "single" && selectedFiles[0]) {
@@ -92,7 +93,10 @@ export default function RemoveBackgroundPage() {
             try {
                 setProcessing(true);
                 setStatus("processing:Đang xóa nền bằng AI...");
-                const blob = await apiClient.removeBackground(file);
+                const blob = await apiClient.removeBackground(file, {
+                    removeAlpha,
+                    bgColor: "#FFFFFF",
+                });
 
                 // Create preview URL for result
                 const url = URL.createObjectURL(blob);
@@ -118,7 +122,10 @@ export default function RemoveBackgroundPage() {
             try {
                 setProcessing(true);
                 setStatus(`processing:Đang xóa nền ${files.length} ảnh...`);
-                const blob = await apiClient.removeBackgroundZip(files);
+                const blob = await apiClient.removeBackgroundZip(files, {
+                    removeAlpha,
+                    bgColor: "#FFFFFF",
+                });
                 downloadBlob(blob, `nobg_${files.length}_images.zip`);
                 setStatus(`success:Đã xóa nền ${files.length} ảnh thành công!`);
             } catch (error) {
@@ -189,8 +196,8 @@ export default function RemoveBackgroundPage() {
                 <button
                     onClick={() => switchMode("single")}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer ${mode === "single"
-                            ? "bg-violet-500 text-white shadow-lg shadow-violet-500/30"
-                            : "bg-[var(--secondary)] text-[var(--muted)] hover:bg-[var(--card)] border border-[var(--border)]"
+                        ? "bg-violet-500 text-white shadow-lg shadow-violet-500/30"
+                        : "bg-[var(--secondary)] text-[var(--muted)] hover:bg-[var(--card)] border border-[var(--border)]"
                         }`}
                 >
                     <ImageIcon className="h-4 w-4" />
@@ -199,8 +206,8 @@ export default function RemoveBackgroundPage() {
                 <button
                     onClick={() => switchMode("batch")}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer ${mode === "batch"
-                            ? "bg-violet-500 text-white shadow-lg shadow-violet-500/30"
-                            : "bg-[var(--secondary)] text-[var(--muted)] hover:bg-[var(--card)] border border-[var(--border)]"
+                        ? "bg-violet-500 text-white shadow-lg shadow-violet-500/30"
+                        : "bg-[var(--secondary)] text-[var(--muted)] hover:bg-[var(--card)] border border-[var(--border)]"
                         }`}
                 >
                     <Files className="h-4 w-4" />
@@ -219,7 +226,7 @@ export default function RemoveBackgroundPage() {
                                 {mode === "single" ? "Chọn ảnh" : "Chọn nhiều ảnh"}
                             </h2>
                             <p className="mt-1 text-sm text-[var(--muted)]">
-                                Chấp nhận PNG, JPG, JPEG. Output PNG với nền trong suốt.
+                                Chấp nhận PNG, JPG, WebP. Output PNG.
                             </p>
                         </div>
                         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/20 text-violet-400">
@@ -229,10 +236,10 @@ export default function RemoveBackgroundPage() {
 
                     <div
                         className={`group relative mt-6 rounded-2xl border-2 border-dashed p-6 transition-all duration-300 focus-within:ring-2 focus-within:ring-violet-400/60 ${dragActive
-                                ? "border-violet-400 bg-violet-500/10 glow-sm"
-                                : (mode === "single" && file) || (mode === "batch" && files.length > 0)
-                                    ? "border-[var(--primary)] bg-[var(--primary)]/10"
-                                    : "border-[var(--border)] bg-[var(--secondary)] hover:border-violet-400/50 hover:bg-[var(--card)]"
+                            ? "border-violet-400 bg-violet-500/10 glow-sm"
+                            : (mode === "single" && file) || (mode === "batch" && files.length > 0)
+                                ? "border-[var(--primary)] bg-[var(--primary)]/10"
+                                : "border-[var(--border)] bg-[var(--secondary)] hover:border-violet-400/50 hover:bg-[var(--card)]"
                             }`}
                         onDragEnter={handleDrag}
                         onDragLeave={handleDrag}
@@ -243,7 +250,7 @@ export default function RemoveBackgroundPage() {
                             ref={fileInputRef}
                             id="image-file"
                             type="file"
-                            accept="image/png,image/jpeg"
+                            accept="image/png,image/jpeg,image/webp"
                             multiple={mode === "batch"}
                             onChange={handleFileChange}
                             className="hidden"
@@ -265,8 +272,8 @@ export default function RemoveBackgroundPage() {
                         >
                             <div
                                 className={`mx-auto flex h-16 w-16 items-center justify-center rounded-2xl transition-transform duration-300 ${(mode === "single" && file) || (mode === "batch" && files.length > 0)
-                                        ? "bg-violet-500 text-white"
-                                        : "bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white group-hover:scale-110"
+                                    ? "bg-violet-500 text-white"
+                                    : "bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white group-hover:scale-110"
                                     }`}
                             >
                                 {(mode === "single" && file) || (mode === "batch" && files.length > 0) ? (
@@ -300,7 +307,7 @@ export default function RemoveBackgroundPage() {
                                     </p>
                                     <p className="text-xs text-[var(--muted)]">hoặc click để chọn file</p>
                                     <p className="text-xs text-[var(--muted)]">
-                                        {mode === "single" ? "Hỗ trợ PNG/JPG" : "Có thể chọn nhiều ảnh"}
+                                        {mode === "single" ? "Hỗ trợ PNG/JPG/WebP" : "Có thể chọn nhiều ảnh"}
                                     </p>
                                 </div>
                             )}
@@ -367,7 +374,9 @@ export default function RemoveBackgroundPage() {
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span>Output</span>
-                                    <span className="font-semibold text-[var(--foreground)]">PNG (transparent)</span>
+                                    <span className="font-semibold text-[var(--foreground)]">
+                                        {removeAlpha ? "PNG (nền trắng)" : "PNG (transparent)"}
+                                    </span>
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span>Files</span>
@@ -381,6 +390,25 @@ export default function RemoveBackgroundPage() {
                                                 : "--"}
                                     </span>
                                 </div>
+                            </div>
+
+                            {/* Remove Alpha Toggle */}
+                            <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                                <label className="flex items-center justify-between cursor-pointer">
+                                    <div>
+                                        <p className="text-sm font-medium text-[var(--foreground)]">Bỏ Alpha</p>
+                                        <p className="text-xs text-[var(--muted)]">Thay nền trong suốt bằng màu trắng</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={removeAlpha}
+                                        onClick={() => setRemoveAlpha(!removeAlpha)}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${removeAlpha ? "bg-violet-500" : "bg-[var(--secondary)]"}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${removeAlpha ? "translate-x-6" : "translate-x-1"}`} />
+                                    </button>
+                                </label>
                             </div>
                         </div>
                     </div>

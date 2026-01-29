@@ -358,9 +358,15 @@ class APIClient {
         return response.blob();
     }
 
-    async removeBackground(file: File): Promise<Blob> {
+    async removeBackground(file: File, options?: { removeAlpha?: boolean; bgColor?: string }): Promise<Blob> {
         const formData = new FormData();
         formData.append('file', file);
+        if (options?.removeAlpha) {
+            formData.append('remove_alpha', '1');
+        }
+        if (options?.bgColor) {
+            formData.append('bg_color', options.bgColor);
+        }
 
         const response = await fetch(`${this.baseURL}/remove-background`, {
             method: 'POST',
@@ -374,9 +380,15 @@ class APIClient {
         return response.blob();
     }
 
-    async removeBackgroundZip(files: File[]): Promise<Blob> {
+    async removeBackgroundZip(files: File[], options?: { removeAlpha?: boolean; bgColor?: string }): Promise<Blob> {
         const formData = new FormData();
         files.forEach((file) => formData.append('files', file));
+        if (options?.removeAlpha) {
+            formData.append('remove_alpha', '1');
+        }
+        if (options?.bgColor) {
+            formData.append('bg_color', options.bgColor);
+        }
 
         const response = await fetch(`${this.baseURL}/remove-background-zip`, {
             method: 'POST',

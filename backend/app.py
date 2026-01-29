@@ -294,9 +294,50 @@ def _validate_positive_int(
 
 def _allowed_image_suffix(filename: str) -> str | None:
     suffix = (Path(filename).suffix or "").lower()
-    if suffix in {".png", ".jpg", ".jpeg"}:
+    if suffix in {".png", ".jpg", ".jpeg", ".webp"}:
         return suffix
     return None
+
+
+def _remove_alpha(image_data: bytes, bg_color: tuple = (255, 255, 255)) -> bytes:
+    """Replace transparent background with solid color.
+    
+    Args:
+        image_data: PNG image bytes with alpha channel
+        bg_color: RGB tuple for background color (default white)
+    
+    Returns:
+        PNG image bytes with solid background
+    """
+    img = Image.open(io.BytesIO(image_data))
+    if img.mode == 'RGBA':
+        background = Image.new('RGB', img.size, bg_color)
+        background.paste(img, mask=img.split()[3])
+        output = io.BytesIO()
+        background.save(output, format='PNG')
+        return output.getvalue()
+    return image_data
+
+
+def _parse_hex_color(hex_color: str) -> tuple:
+    """Parse hex color string to RGB tuple.
+    
+    Args:
+        hex_color: Hex color string like '#FFFFFF' or 'FFFFFF'
+    
+    Returns:
+        RGB tuple like (255, 255, 255)
+    """
+    hex_color = hex_color.strip().lstrip('#')
+    if len(hex_color) != 6:
+        return (255, 255, 255)  # Default to white
+    try:
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        return (r, g, b)
+    except ValueError:
+        return (255, 255, 255)
 
 
 def _allowed_static_image_suffix(filename: str) -> str | None:
@@ -1196,9 +1237,14 @@ def png_to_webp():
 
 @app.post("/remove-background")
 def remove_background():
-    """Remove background from an uploaded PNG/JPG image using AI.
+    """Remove background from an uploaded PNG/JPG/WebP image using AI.
     
-    Returns a PNG image with transparent background.
+    Args (form data):
+        file: Image file (PNG/JPG/JPEG/WebP)
+        remove_alpha: Optional. If '1'/'true', replace transparent bg with solid color
+        bg_color: Optional. Hex color for background when remove_alpha=true (default: #FFFFFF)
+    
+    Returns a PNG image with transparent or solid background.
     """
     if not HAS_REMBG:
         abort(500, "Thư viện rembg không được cài đặt. Vui lòng cài đặt 'rembg[cpu]'.")
@@ -1210,7 +1256,12 @@ def remove_background():
     filename = file.filename
     suffix = _allowed_image_suffix(filename)
     if suffix is None:
-        abort(400, "Chỉ chấp nhận PNG/JPG/JPEG")
+        abort(400, "Chỉ chấp nhận PNG/JPG/JPEG/WebP")
+
+    # Parse options
+    remove_alpha = _parse_bool(request.form.get("remove_alpha", "0"))
+    bg_color_hex = request.form.get("bg_color", "#FFFFFF")
+    bg_color = _parse_hex_color(bg_color_hex)
 
     input_name = f"{uuid.uuid4().hex}{suffix}"
     input_path = UPLOAD_DIR / input_name
@@ -1225,6 +1276,10 @@ def remove_background():
         # Remove background using rembg with session reuse
         session = _get_rembg_session()
         output_data = rembg_remove(input_data, session=session)
+        
+        # Optionally remove alpha channel
+        if remove_alpha:
+            output_data = _remove_alpha(output_data, bg_color)
         
         # Save output
         with open(output_path, 'wb') as f:
@@ -1253,8 +1308,12 @@ def remove_background():
 def remove_background_zip():
     """Remove background from multiple images and return as ZIP.
     
-    Accepts multiple PNG/JPG files and returns a ZIP containing
-    PNG images with transparent backgrounds.
+    Args (form data):
+        files: Image files (PNG/JPG/JPEG/WebP)
+        remove_alpha: Optional. If '1'/'true', replace transparent bg with solid color
+        bg_color: Optional. Hex color for background when remove_alpha=true (default: #FFFFFF)
+    
+    Returns a ZIP containing PNG images with transparent or solid backgrounds.
     """
     if not HAS_REMBG:
         abort(500, "Thư viện rembg không được cài đặt. Vui lòng cài đặt 'rembg[cpu]'.")
@@ -1262,6 +1321,11 @@ def remove_background_zip():
     files = request.files.getlist("files")
     if not files:
         abort(400, "Thiếu danh sách ảnh (files)")
+
+    # Parse options
+    remove_alpha = _parse_bool(request.form.get("remove_alpha", "0"))
+    bg_color_hex = request.form.get("bg_color", "#FFFFFF")
+    bg_color = _parse_hex_color(bg_color_hex)
 
     batch_dir = OUTPUT_DIR / f"rembg_{uuid.uuid4().hex}"
     batch_dir.mkdir(parents=True, exist_ok=True)
@@ -1291,6 +1355,10 @@ def remove_background_zip():
                     input_data = fp.read()
                 
                 output_data = rembg_remove(input_data, session=session)
+                
+                # Optionally remove alpha channel
+                if remove_alpha:
+                    output_data = _remove_alpha(output_data, bg_color)
                 
                 # Save output
                 output_name = _safe_zip_entry_name_with_ext(
