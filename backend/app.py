@@ -1350,11 +1350,14 @@ def remove_background_zip():
             f.save(input_path)
             
             try:
-                # Read and process image
+                # Read and process image sequentially to avoid OOM
                 with open(input_path, 'rb') as fp:
                     input_data = fp.read()
                 
                 output_data = rembg_remove(input_data, session=session)
+                
+                # Free input data immediately
+                del input_data
                 
                 # Optionally remove alpha channel
                 if remove_alpha:
@@ -1372,8 +1375,13 @@ def remove_background_zip():
                 
                 processed_files.append((output_name, output_path))
                 
+                # Free output data and force garbage collection after each image
+                del output_data
+                gc.collect()
+                
             except Exception as e:
                 print(f"Warning: Failed to process {f.filename}: {e}")
+                gc.collect()  # Also collect on error
                 continue
             finally:
                 input_path.unlink(missing_ok=True)
