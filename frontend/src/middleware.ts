@@ -33,21 +33,21 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Build correct redirect URL using forwarded headers (for reverse proxy)
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+  const host = forwardedHost || request.headers.get("host") || request.nextUrl.host;
+
   const expectedHash = await getExpectedHash();
   if (!expectedHash) {
-    const url = request.nextUrl.clone();
-    url.pathname = LOGIN_PATH;
-    url.searchParams.set("from", pathname);
-    url.searchParams.set("error", "missing");
-    return NextResponse.redirect(url);
+    const redirectUrl = `${forwardedProto}://${host}${LOGIN_PATH}?from=${encodeURIComponent(pathname)}&error=missing`;
+    return NextResponse.redirect(redirectUrl);
   }
 
   const cookieValue = request.cookies.get("monitor_access")?.value;
   if (!cookieValue || cookieValue !== expectedHash) {
-    const url = request.nextUrl.clone();
-    url.pathname = LOGIN_PATH;
-    url.searchParams.set("from", pathname);
-    return NextResponse.redirect(url);
+    const redirectUrl = `${forwardedProto}://${host}${LOGIN_PATH}?from=${encodeURIComponent(pathname)}`;
+    return NextResponse.redirect(redirectUrl);
   }
 
   return NextResponse.next();
