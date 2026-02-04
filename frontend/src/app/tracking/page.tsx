@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -13,11 +13,19 @@ import {
   Search,
   Smartphone,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Calendar,
   X,
   Image as ImageIcon,
+  Filter,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { apiClient, TrackingItem, TrackingResponse } from '@/lib/api-client';
+
+// ==================== UTILITIES ====================
 
 const formatDateTime = (value: string) => {
   const date = new Date(value);
@@ -41,7 +49,6 @@ const getDateParts = (value: string) => {
     date: new Intl.DateTimeFormat('vi-VN', {
       day: 'numeric',
       month: 'short',
-      year: 'numeric',
     }).format(date),
   };
 };
@@ -51,23 +58,14 @@ const formatResponseTime = (value: number | null) => {
   return `${value.toFixed(2)}s`;
 };
 
-const formatDayLabel = (value: string) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('vi-VN', {
-    month: 'short',
-    day: 'numeric',
-  }).format(date);
-};
-
 const getHealthLabel = (value: boolean | null) => {
-  if (value === true) return { label: 'Healthy', tone: 'bg-emerald-500/20 text-emerald-400' };
-  if (value === false) return { label: 'Issue', tone: 'bg-rose-500/20 text-rose-400' };
-  return { label: 'Unknown', tone: 'bg-slate-700 text-slate-400' };
+  if (value === true) return { label: 'Healthy', tone: 'bg-emerald-500/20 text-emerald-400 ring-emerald-500/30' };
+  if (value === false) return { label: 'Issue', tone: 'bg-rose-500/20 text-rose-400 ring-rose-500/30' };
+  return { label: 'Unknown', tone: 'bg-slate-700/50 text-slate-400 ring-slate-600/30' };
 };
 
 const getPlatformLabel = (deviceId: string | null | undefined) => {
-  if (!deviceId) return { label: 'Unknown', tone: 'bg-slate-700 text-slate-400' };
+  if (!deviceId) return { label: 'Unknown', tone: 'bg-slate-700/50 text-slate-400' };
   const normalized = deviceId.toUpperCase();
   if (normalized.startsWith('AID')) {
     return { label: 'Android', tone: 'bg-emerald-500/20 text-emerald-400' };
@@ -75,7 +73,7 @@ const getPlatformLabel = (deviceId: string | null | undefined) => {
   if (normalized.startsWith('DID') || normalized.startsWith('IOS')) {
     return { label: 'iOS', tone: 'bg-indigo-500/20 text-indigo-400' };
   }
-  return { label: 'Unknown', tone: 'bg-slate-700 text-slate-400' };
+  return { label: 'Unknown', tone: 'bg-slate-700/50 text-slate-400' };
 };
 
 const formatCsvValue = (value: string | number | boolean | null | undefined) => {
@@ -85,6 +83,240 @@ const formatCsvValue = (value: string | number | boolean | null | undefined) => 
   if (/[",\n]/.test(escaped)) return `"${escaped}"`;
   return escaped;
 };
+
+// ==================== SKELETON COMPONENTS ====================
+
+const SkeletonRow = () => (
+  <tr className="animate-pulse">
+    {[...Array(9)].map((_, i) => (
+      <td key={i} className="px-4 py-4">
+        <div className="h-4 bg-slate-700/50 rounded-md w-full" style={{ width: `${60 + Math.random() * 40}%` }} />
+      </td>
+    ))}
+  </tr>
+);
+
+const StatCardSkeleton = () => (
+  <div className="glass-card p-5 animate-pulse">
+    <div className="flex items-center justify-between mb-4">
+      <div className="h-3 bg-slate-700/50 rounded w-24" />
+      <div className="h-5 w-5 bg-slate-700/50 rounded" />
+    </div>
+    <div className="h-8 bg-slate-700/50 rounded w-20 mb-2" />
+    <div className="h-3 bg-slate-700/50 rounded w-16" />
+  </div>
+);
+
+// ==================== PAGINATION COMPONENT ====================
+
+interface PaginationProps {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  itemsPerPage: number;
+  onPageChange: (page: number) => void;
+  onItemsPerPageChange: (count: number) => void;
+}
+
+const Pagination = ({
+  currentPage,
+  totalPages,
+  totalItems,
+  itemsPerPage,
+  onPageChange,
+  onItemsPerPageChange,
+}: PaginationProps) => {
+  const startItem = (currentPage - 1) * itemsPerPage + 1;
+  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const delta = 2;
+
+    // Guard against invalid totalPages
+    if (!totalPages || totalPages <= 0 || !Number.isFinite(totalPages)) {
+      return [1];
+    }
+
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    pages.push(1);
+
+    if (currentPage > delta + 2) {
+      pages.push('...');
+    }
+
+    const start = Math.max(2, currentPage - delta);
+    const end = Math.min(totalPages - 1, currentPage + delta);
+
+    for (let i = start; i <= end; i++) {
+      if (!pages.includes(i)) pages.push(i);
+    }
+
+    if (currentPage < totalPages - delta - 1) {
+      pages.push('...');
+    }
+
+    if (!pages.includes(totalPages)) {
+      pages.push(totalPages);
+    }
+
+    return pages;
+  };
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-4 border-t border-white/5">
+      {/* Info */}
+      <div className="text-sm text-slate-400">
+        Showing <span className="font-medium text-white">{startItem}</span> to{' '}
+        <span className="font-medium text-white">{endItem}</span> of{' '}
+        <span className="font-medium text-white">{totalItems.toLocaleString()}</span> results
+      </div>
+
+      {/* Controls */}
+      <div className="flex items-center gap-2">
+        {/* Items per page */}
+        <div className="flex items-center gap-2 mr-4">
+          <span className="text-xs text-slate-500">Per page:</span>
+          <select
+            value={itemsPerPage}
+            onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
+            className="bg-slate-800/80 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
+          >
+            {[25, 50, 100].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* First & Prev */}
+        <button
+          onClick={() => onPageChange(1)}
+          disabled={currentPage === 1}
+          className="p-2 rounded-lg bg-slate-800/50 border border-white/5 text-slate-400 hover:bg-slate-700/50 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+        >
+          <ChevronsLeft className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="p-2 rounded-lg bg-slate-800/50 border border-white/5 text-slate-400 hover:bg-slate-700/50 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        {/* Page numbers */}
+        <div className="flex items-center gap-1">
+          {getPageNumbers().map((page, idx) =>
+            typeof page === 'string' ? (
+              <span key={`ellipsis-${idx}`} className="px-2 text-slate-500">...</span>
+            ) : (
+              <button
+                key={page}
+                onClick={() => onPageChange(page)}
+                className={`min-w-[36px] h-9 rounded-lg text-sm font-medium transition-all cursor-pointer ${currentPage === page
+                  ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/25'
+                  : 'bg-slate-800/50 border border-white/5 text-slate-400 hover:bg-slate-700/50 hover:text-white'
+                  }`}
+              >
+                {page}
+              </button>
+            )
+          )}
+        </div>
+
+        {/* Next & Last */}
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          className="p-2 rounded-lg bg-slate-800/50 border border-white/5 text-slate-400 hover:bg-slate-700/50 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => onPageChange(totalPages)}
+          disabled={currentPage === totalPages}
+          className="p-2 rounded-lg bg-slate-800/50 border border-white/5 text-slate-400 hover:bg-slate-700/50 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+        >
+          <ChevronsRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ==================== FILTER BADGE ====================
+
+interface FilterBadgeProps {
+  label: string;
+  value: string;
+  onRemove: () => void;
+}
+
+const FilterBadge = ({ label, value, onRemove }: FilterBadgeProps) => (
+  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs font-medium ring-1 ring-blue-500/30">
+    <span className="text-blue-300/70">{label}:</span>
+    {value}
+    <button onClick={onRemove} className="ml-0.5 hover:text-white transition-colors cursor-pointer">
+      <X className="w-3 h-3" />
+    </button>
+  </span>
+);
+
+// ==================== QUICK DATE PRESETS ====================
+
+interface QuickDateProps {
+  onSelect: (from: string, to: string) => void;
+  activePreset: string | null;
+}
+
+const QuickDatePresets = ({ onSelect, activePreset }: QuickDateProps) => {
+  const presets = [
+    { label: 'Today', key: 'today', days: 0 },
+    { label: 'Yesterday', key: 'yesterday', days: 1 },
+    { label: 'Last 7 days', key: '7days', days: 7 },
+    { label: 'Last 30 days', key: '30days', days: 30 },
+  ];
+
+  const handleClick = (key: string, days: number) => {
+    const today = new Date();
+    const to = today.toISOString().split('T')[0];
+
+    if (key === 'yesterday') {
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const from = yesterday.toISOString().split('T')[0];
+      onSelect(from, from);
+    } else if (key === 'today') {
+      onSelect(to, to);
+    } else {
+      const from = new Date(today);
+      from.setDate(from.getDate() - days);
+      onSelect(from.toISOString().split('T')[0], to);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {presets.map((p) => (
+        <button
+          key={p.key}
+          onClick={() => handleClick(p.key, p.days)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${activePreset === p.key
+            ? 'bg-blue-500 text-white'
+            : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700/50 hover:text-white border border-white/5'
+            }`}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// ==================== MAIN COMPONENT ====================
 
 export default function TrackingPage() {
   const [records, setRecords] = useState<TrackingItem[]>([]);
@@ -98,12 +330,18 @@ export default function TrackingPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(true);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
 
   const fetchTracking = async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await apiClient.getTracking();
+      const response = await apiClient.getTracking(1, 100); // Get data for client-side filtering
       setRecords(response.data);
       setPagination(response.pagination);
     } catch (err) {
@@ -149,7 +387,6 @@ export default function TrackingPage() {
       if (countryFilter !== 'all' && item.country_code !== countryFilter) return false;
       if (appVersionFilter !== 'all' && item.app_version !== appVersionFilter) return false;
 
-      // Date filter
       if (dateFrom || dateTo) {
         const itemDate = new Date(item.date).getTime();
         if (Number.isNaN(itemDate)) return false;
@@ -172,6 +409,19 @@ export default function TrackingPage() {
     });
   }, [versionedRecords, query, functionFilter, countryFilter, appVersionFilter, dateFrom, dateTo]);
 
+  // Paginated records
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredRecords.slice(start, start + itemsPerPage);
+  }, [filteredRecords, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(filteredRecords.length / itemsPerPage);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, functionFilter, countryFilter, appVersionFilter, dateFrom, dateTo, itemsPerPage]);
+
   const stats = useMemo(() => {
     const total = versionedRecords.length;
     const deviceCount = new Set(versionedRecords.map((item) => item.device_id).filter(Boolean)).size;
@@ -186,8 +436,41 @@ export default function TrackingPage() {
     return { total, deviceCount, avgResponse, healthyCount, issueCount };
   }, [versionedRecords]);
 
-  const hasActiveFilters =
-    query.trim().length > 0 || functionFilter !== 'all' || countryFilter !== 'all' || appVersionFilter !== 'all' || dateFrom || dateTo;
+  const activeFilters = useMemo(() => {
+    const filters: { key: string; label: string; value: string; onRemove: () => void }[] = [];
+    if (query.trim()) filters.push({ key: 'query', label: 'Search', value: query, onRemove: () => setQuery('') });
+    if (functionFilter !== 'all') filters.push({ key: 'function', label: 'Function', value: functionFilter, onRemove: () => setFunctionFilter('all') });
+    if (countryFilter !== 'all') filters.push({ key: 'country', label: 'Country', value: countryFilter, onRemove: () => setCountryFilter('all') });
+    if (appVersionFilter !== 'all') filters.push({ key: 'version', label: 'Version', value: appVersionFilter, onRemove: () => setAppVersionFilter('all') });
+    if (dateFrom) filters.push({ key: 'dateFrom', label: 'From', value: dateFrom, onRemove: () => { setDateFrom(''); setActivePreset(null); } });
+    if (dateTo) filters.push({ key: 'dateTo', label: 'To', value: dateTo, onRemove: () => { setDateTo(''); setActivePreset(null); } });
+    return filters;
+  }, [query, functionFilter, countryFilter, appVersionFilter, dateFrom, dateTo]);
+
+  const clearAllFilters = () => {
+    setQuery('');
+    setFunctionFilter('all');
+    setCountryFilter('all');
+    setAppVersionFilter('all');
+    setDateFrom('');
+    setDateTo('');
+    setActivePreset(null);
+  };
+
+  const handleDatePreset = (from: string, to: string) => {
+    setDateFrom(from);
+    setDateTo(to);
+    // Determine which preset was selected
+    const today = new Date().toISOString().split('T')[0];
+    if (from === to && from === today) setActivePreset('today');
+    else if (from === to) setActivePreset('yesterday');
+    else {
+      const diffDays = Math.round((new Date(to).getTime() - new Date(from).getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays === 6) setActivePreset('7days');
+      else if (diffDays === 29) setActivePreset('30days');
+      else setActivePreset(null);
+    }
+  };
 
   const handleExportCsv = () => {
     const headers = ['date', 'function', 'result', 'is_plant_healthy', 'response_time_seconds', 'app_version', 'platform', 'device_id', 'country_code', 'image_url'];
@@ -208,209 +491,312 @@ export default function TrackingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6">
-      {/* Background effects */}
+    <div className="min-h-screen bg-[#0a0f1a] text-slate-100">
+      {/* Gradient background orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-32 right-[-10%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.2),transparent_65%)] blur-3xl animate-float" />
-        <div className="absolute -bottom-40 left-[-10%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_center,rgba(249,115,22,0.15),transparent_60%)] blur-3xl animate-float" style={{ animationDelay: '2s' }} />
+        <div className="absolute -top-40 -right-40 h-[600px] w-[600px] rounded-full bg-blue-500/10 blur-[128px]" />
+        <div className="absolute top-1/2 -left-40 h-[500px] w-[500px] rounded-full bg-purple-500/8 blur-[128px]" />
+        <div className="absolute -bottom-40 right-1/4 h-[400px] w-[400px] rounded-full bg-cyan-500/8 blur-[128px]" />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-7xl">
+      <div className="relative z-10 mx-auto max-w-[1600px] px-4 py-6 md:px-6 lg:px-8">
         {/* Header */}
-        <header className="flex flex-wrap items-center justify-between gap-4 animate-fade-in">
+        <header className="flex flex-wrap items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-4">
             <Link
               href="/"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-slate-300 ring-1 ring-slate-700 transition hover:bg-slate-700 cursor-pointer"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 text-slate-300 transition-all hover:bg-white/10 hover:border-white/20 hover:text-white cursor-pointer"
             >
               <ArrowLeft className="h-5 w-5" />
             </Link>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Analytics</p>
-              <h1 className="text-2xl font-bold text-white md:text-3xl">Tracking Dashboard</h1>
-              <p className="text-sm text-slate-500">Plant Identify & Diagnose logs</p>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider">Analytics</span>
+              </div>
+              <h1 className="text-2xl font-bold text-white md:text-3xl tracking-tight">Tracking Dashboard</h1>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Link href="/tools" className="btn-secondary rounded-lg cursor-pointer">Tools</Link>
-            <button onClick={fetchTracking} disabled={loading} className="btn-primary rounded-lg cursor-pointer">
+          <div className="flex items-center gap-3">
+            <Link href="/tools" className="btn-glass cursor-pointer">Tools</Link>
+            <button onClick={fetchTracking} disabled={loading} className="btn-primary cursor-pointer">
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
           </div>
         </header>
 
-        {/* Stats */}
-        <section className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4 animate-fade-up">
-          {[
-            { label: 'Total Requests', value: stats.total, sub: `${filteredRecords.length} filtered`, icon: BarChart3, color: 'text-cyan-400' },
-            { label: 'Devices', value: stats.deviceCount, sub: 'Unique IDs', icon: Smartphone, color: 'text-violet-400' },
-            { label: 'Avg Response', value: stats.avgResponse ? `${stats.avgResponse.toFixed(2)}s` : '--', sub: 'Response time', icon: Clock3, color: 'text-amber-400' },
-            { label: 'Health', value: `${stats.healthyCount}/${stats.issueCount}`, sub: 'Healthy / Issue', icon: HeartPulse, color: 'text-emerald-400' },
-          ].map((stat) => (
-            <div key={stat.label} className="card">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">{stat.label}</p>
-                <stat.icon className={`h-4 w-4 ${stat.color}`} />
+        {/* Stats Grid - Bento Style */}
+        <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+          {loading ? (
+            [...Array(4)].map((_, i) => <StatCardSkeleton key={i} />)
+          ) : (
+            [
+              { label: 'Total Requests', value: stats.total.toLocaleString(), sub: `${filteredRecords.length.toLocaleString()} filtered`, icon: BarChart3, color: 'from-cyan-500 to-blue-500', iconBg: 'bg-cyan-500/20' },
+              { label: 'Unique Devices', value: stats.deviceCount.toLocaleString(), sub: 'Active devices', icon: Smartphone, color: 'from-violet-500 to-purple-500', iconBg: 'bg-violet-500/20' },
+              { label: 'Avg Response', value: stats.avgResponse ? `${stats.avgResponse.toFixed(2)}s` : '--', sub: 'Response time', icon: Clock3, color: 'from-amber-500 to-orange-500', iconBg: 'bg-amber-500/20' },
+              { label: 'Health Ratio', value: `${stats.healthyCount}/${stats.issueCount}`, sub: 'Healthy / Issues', icon: HeartPulse, color: 'from-emerald-500 to-teal-500', iconBg: 'bg-emerald-500/20' },
+            ].map((stat, idx) => (
+              <div
+                key={stat.label}
+                className="group relative overflow-hidden rounded-2xl bg-white/[0.03] backdrop-blur-xl border border-white/[0.05] p-5 transition-all duration-300 hover:bg-white/[0.06] hover:border-white/10 hover:shadow-2xl hover:shadow-black/20"
+                style={{ animationDelay: `${idx * 100}ms` }}
+              >
+                {/* Gradient line at top */}
+                <div className={`absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r ${stat.color} opacity-60`} />
+
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">{stat.label}</p>
+                  <div className={`p-2 rounded-lg ${stat.iconBg}`}>
+                    <stat.icon className="h-4 w-4 text-white/80" />
+                  </div>
+                </div>
+                <p className="text-3xl font-bold text-white tracking-tight">{stat.value}</p>
+                <p className="mt-1.5 text-xs text-slate-500">{stat.sub}</p>
               </div>
-              <p className="mt-3 text-3xl font-bold text-white">{stat.value}</p>
-              <p className="mt-1 text-xs text-slate-500">{stat.sub}</p>
-            </div>
-          ))}
+            ))
+          )}
         </section>
 
-        {/* Filters */}
-        <section className="mt-6 rounded-xl bg-slate-900 p-4 ring-1 ring-slate-800 animate-fade-up">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
-              Filters
-              {hasActiveFilters && <span className="rounded-full bg-blue-500 px-2 py-0.5 text-[10px] text-white">Active</span>}
-            </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <Globe2 className="h-4 w-4" />
-              {pagination ? `${pagination.total} records` : 'Loading...'}
-            </div>
-          </div>
-
-          {/* Row 1: Search + Dropdowns */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-            {/* Search */}
-            <div className="relative lg:col-span-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search..."
-                className="input pl-10 w-full"
-              />
-            </div>
-            {/* Function */}
-            <div className="relative">
-              <select value={functionFilter} onChange={(e) => setFunctionFilter(e.target.value)} className="input appearance-none pr-8 w-full">
-                <option value="all">All Functions</option>
-                {functions.map((f) => <option key={f} value={f}>{f} ({functionCounts.get(f) ?? 0})</option>)}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            </div>
-            {/* Version */}
-            <div className="relative">
-              <select value={appVersionFilter} onChange={(e) => setAppVersionFilter(e.target.value)} className="input appearance-none pr-8 w-full">
-                <option value="all">All Versions</option>
-                {appVersions.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            </div>
-            {/* Country */}
-            <div className="relative">
-              <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)} className="input appearance-none pr-8 w-full">
-                <option value="all">All Countries</option>
-                {countries.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            </div>
-          </div>
-
-          {/* Row 2: Dates + Actions */}
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Date From */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">From:</span>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="input px-3 py-2"
-              />
-            </div>
-            {/* Date To */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">To:</span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="input px-3 py-2"
-              />
-            </div>
-
-            <div className="flex-1" />
-
-            {/* Reset */}
+        {/* Filters Section */}
+        <section className="mb-6 rounded-2xl bg-white/[0.03] backdrop-blur-xl border border-white/[0.05] overflow-hidden">
+          {/* Filter Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
             <button
-              onClick={() => { setQuery(''); setFunctionFilter('all'); setCountryFilter('all'); setAppVersionFilter('all'); setDateFrom(''); setDateTo(''); }}
-              className="btn-secondary"
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 text-sm font-medium text-slate-300 hover:text-white transition-colors cursor-pointer"
             >
-              Reset
+              <SlidersHorizontal className="w-4 h-4" />
+              Filters
+              {activeFilters.length > 0 && (
+                <span className="ml-1 px-2 py-0.5 rounded-full bg-blue-500 text-white text-xs font-bold">
+                  {activeFilters.length}
+                </span>
+              )}
+              <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
             </button>
-            {/* Export */}
-            <button onClick={handleExportCsv} disabled={filteredRecords.length === 0} className="btn-primary">
-              <Download className="h-4 w-4" />
-              Export
-            </button>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 flex items-center gap-1.5">
+                <Globe2 className="h-3.5 w-3.5" />
+                {pagination ? `${pagination.total.toLocaleString()} total records` : 'Loading...'}
+              </span>
+            </div>
           </div>
+
+          {/* Active Filter Badges */}
+          {activeFilters.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 px-5 py-3 border-b border-white/5 bg-white/[0.02]">
+              {activeFilters.map((f) => (
+                <FilterBadge key={f.key} label={f.label} value={f.value} onRemove={f.onRemove} />
+              ))}
+              <button
+                onClick={clearAllFilters}
+                className="text-xs text-slate-400 hover:text-white transition-colors ml-2 cursor-pointer"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+
+          {/* Filter Controls */}
+          {showFilters && (
+            <div className="p-5 space-y-4">
+              {/* Row 1: Search + Dropdowns */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search devices, results..."
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-900/50 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                  />
+                </div>
+
+                {/* Function */}
+                <div className="relative">
+                  <select
+                    value={functionFilter}
+                    onChange={(e) => setFunctionFilter(e.target.value)}
+                    className="w-full appearance-none px-4 py-2.5 pr-10 bg-slate-900/50 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all cursor-pointer"
+                  >
+                    <option value="all">All Functions</option>
+                    {functions.map((f) => (
+                      <option key={f} value={f}>{f} ({functionCounts.get(f) ?? 0})</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                </div>
+
+                {/* Version */}
+                <div className="relative">
+                  <select
+                    value={appVersionFilter}
+                    onChange={(e) => setAppVersionFilter(e.target.value)}
+                    className="w-full appearance-none px-4 py-2.5 pr-10 bg-slate-900/50 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all cursor-pointer"
+                  >
+                    <option value="all">All Versions</option>
+                    {appVersions.map((v) => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                </div>
+
+                {/* Country */}
+                <div className="relative">
+                  <select
+                    value={countryFilter}
+                    onChange={(e) => setCountryFilter(e.target.value)}
+                    className="w-full appearance-none px-4 py-2.5 pr-10 bg-slate-900/50 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all cursor-pointer"
+                  >
+                    <option value="all">All Countries</option>
+                    {countries.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                </div>
+              </div>
+
+              {/* Row 2: Date filters + Actions */}
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Quick presets */}
+                <QuickDatePresets onSelect={handleDatePreset} activePreset={activePreset} />
+
+                <div className="h-6 w-px bg-white/10" />
+
+                {/* Custom dates */}
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-slate-500" />
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => { setDateFrom(e.target.value); setActivePreset(null); }}
+                    className="px-3 py-2 bg-slate-900/50 border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                  <span className="text-slate-500">→</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => { setDateTo(e.target.value); setActivePreset(null); }}
+                    className="px-3 py-2 bg-slate-900/50 border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
+
+                <div className="flex-1" />
+
+                {/* Export */}
+                <button
+                  onClick={handleExportCsv}
+                  disabled={filteredRecords.length === 0}
+                  className="btn-glass disabled:opacity-50 cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
-        {/* Table */}
-        <section className="mt-6 overflow-hidden rounded-xl bg-slate-900 ring-1 ring-slate-800 animate-fade-up">
+        {/* Data Table */}
+        <section className="rounded-2xl bg-white/[0.03] backdrop-blur-xl border border-white/[0.05] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-800 text-xs uppercase tracking-widest text-slate-500">
+              <thead className="bg-slate-900/50 text-xs uppercase tracking-wider text-slate-500 sticky top-0">
                 <tr>
-                  <th className="px-4 py-3 text-left">Date</th>
-                  <th className="px-4 py-3 text-left">Function</th>
-                  <th className="px-4 py-3 text-left">Result</th>
-                  <th className="px-4 py-3 text-left">Health</th>
-                  <th className="px-4 py-3 text-left">Response</th>
-                  <th className="px-4 py-3 text-left">Version</th>
-                  <th className="px-4 py-3 text-left">Platform</th>
-                  <th className="px-4 py-3 text-left">Country</th>
-                  <th className="px-4 py-3 text-left">Image</th>
+                  <th className="px-4 py-4 text-left font-semibold">Date</th>
+                  <th className="px-4 py-4 text-left font-semibold">Function</th>
+                  <th className="px-4 py-4 text-left font-semibold">Result</th>
+                  <th className="px-4 py-4 text-left font-semibold">Health</th>
+                  <th className="px-4 py-4 text-left font-semibold">Response</th>
+                  <th className="px-4 py-4 text-left font-semibold">Version</th>
+                  <th className="px-4 py-4 text-left font-semibold">Platform</th>
+                  <th className="px-4 py-4 text-left font-semibold">Country</th>
+                  <th className="px-4 py-4 text-left font-semibold">Image</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
-                {loading && (
-                  <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">
-                    <RefreshCw className="mx-auto h-5 w-5 animate-spin mb-2" />Loading...
-                  </td></tr>
-                )}
+              <tbody className="divide-y divide-white/5">
+                {loading && [...Array(10)].map((_, i) => <SkeletonRow key={i} />)}
+
                 {!loading && error && (
-                  <tr><td colSpan={9} className="px-4 py-8 text-center text-rose-400">{error}</td></tr>
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center">
+                      <div className="text-rose-400 mb-2">{error}</div>
+                      <button onClick={fetchTracking} className="text-blue-400 hover:text-blue-300 text-sm cursor-pointer">
+                        Try again
+                      </button>
+                    </td>
+                  </tr>
                 )}
+
                 {!loading && !error && filteredRecords.length === 0 && (
-                  <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No data found</td></tr>
+                  <tr>
+                    <td colSpan={9} className="px-4 py-16 text-center">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-16 h-16 rounded-full bg-slate-800/50 flex items-center justify-center">
+                          <Search className="w-6 h-6 text-slate-500" />
+                        </div>
+                        <p className="text-slate-400">No records found</p>
+                        {activeFilters.length > 0 && (
+                          <button onClick={clearAllFilters} className="text-blue-400 hover:text-blue-300 text-sm cursor-pointer">
+                            Clear all filters
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
                 )}
-                {!loading && !error && filteredRecords.slice(0, 100).map((item, index) => {
+
+                {!loading && !error && paginatedRecords.map((item, index) => {
                   const health = getHealthLabel(item.is_plant_healthy ?? null);
                   const platform = getPlatformLabel(item.device_id);
                   const dateParts = getDateParts(item.date);
                   return (
-                    <tr key={`${item.device_id}-${index}`} className="hover:bg-slate-800/50 transition">
-                      <td className="px-4 py-3">
+                    <tr
+                      key={`${item.device_id}-${index}`}
+                      className="group hover:bg-white/[0.03] transition-colors"
+                      style={{ animationDelay: `${index * 20}ms` }}
+                    >
+                      <td className="px-4 py-3.5">
                         <p className="font-medium text-white">{dateParts.time}</p>
                         <p className="text-xs text-slate-500">{dateParts.date}</p>
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="rounded-md bg-cyan-500/20 px-2 py-1 text-xs font-medium text-cyan-400">{item.function}</span>
+                      <td className="px-4 py-3.5">
+                        <span className="inline-flex px-2.5 py-1 rounded-lg bg-cyan-500/15 text-cyan-400 text-xs font-medium ring-1 ring-cyan-500/20">
+                          {item.function}
+                        </span>
                       </td>
-                      <td className="px-4 py-3">
-                        <p className="max-w-[200px] truncate text-slate-300" title={item.result}>{item.result || '—'}</p>
+                      <td className="px-4 py-3.5">
+                        <p className="max-w-[200px] truncate text-slate-300" title={item.result}>
+                          {item.result || '—'}
+                        </p>
                       </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-md px-2 py-1 text-xs font-medium ${health.tone}`}>{health.label}</span>
+                      <td className="px-4 py-3.5">
+                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-medium ring-1 ${health.tone}`}>
+                          {health.label}
+                        </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-400">{formatResponseTime(item.response_time_seconds)}</td>
-                      <td className="px-4 py-3">
-                        <span className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-300">{item.app_version}</span>
+                      <td className="px-4 py-3.5 text-slate-400 font-mono text-xs">
+                        {formatResponseTime(item.response_time_seconds)}
                       </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-md px-2 py-1 text-xs font-medium ${platform.tone}`}>{platform.label}</span>
+                      <td className="px-4 py-3.5">
+                        <span className="inline-flex px-2 py-1 rounded-md bg-slate-700/50 text-slate-300 text-xs">
+                          {item.app_version}
+                        </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-400">{item.country_code || '—'}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3.5">
+                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-medium ${platform.tone}`}>
+                          {platform.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 text-slate-400">{item.country_code || '—'}</td>
+                      <td className="px-4 py-3.5">
                         {item.image_url ? (
                           <button
                             onClick={() => setPreviewImage(item.image_url)}
-                            className="group relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 ring-1 ring-slate-700 hover:ring-blue-500 transition cursor-pointer"
+                            className="group/img relative w-10 h-10 rounded-lg overflow-hidden bg-slate-800 ring-1 ring-white/10 hover:ring-blue-500/50 transition-all cursor-pointer"
                           >
                             <img
                               src={item.image_url}
@@ -420,7 +806,7 @@ export default function TrackingPage() {
                                 (e.target as HTMLImageElement).style.display = 'none';
                               }}
                             />
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/img:opacity-100 transition flex items-center justify-center">
                               <ImageIcon className="w-4 h-4 text-white" />
                             </div>
                           </button>
@@ -434,10 +820,17 @@ export default function TrackingPage() {
               </tbody>
             </table>
           </div>
-          {filteredRecords.length > 100 && (
-            <div className="px-4 py-3 text-center text-xs text-slate-500 border-t border-slate-800">
-              Showing 100 of {filteredRecords.length} records
-            </div>
+
+          {/* Pagination */}
+          {!loading && !error && filteredRecords.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filteredRecords.length}
+              itemsPerPage={itemsPerPage}
+              onPageChange={setCurrentPage}
+              onItemsPerPageChange={setItemsPerPage}
+            />
           )}
         </section>
       </div>
@@ -445,25 +838,76 @@ export default function TrackingPage() {
       {/* Image Preview Modal */}
       {previewImage && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-xl p-4"
           onClick={() => setPreviewImage(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh] animate-scale-in">
             <button
               onClick={() => setPreviewImage(null)}
-              className="absolute -top-12 right-0 p-2 text-white/70 hover:text-white transition"
+              className="absolute -top-12 right-0 p-2 text-white/70 hover:text-white transition cursor-pointer"
             >
               <X className="w-6 h-6" />
             </button>
             <img
               src={previewImage}
               alt="Full preview"
-              className="max-w-full max-h-[85vh] rounded-xl shadow-2xl"
+              className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl ring-1 ring-white/10"
               onClick={(e) => e.stopPropagation()}
             />
           </div>
         </div>
       )}
+
+      {/* Custom styles */}
+      <style jsx global>{`
+        .btn-primary {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.625rem 1.25rem;
+          background: linear-gradient(135deg, #3b82f6, #2563eb);
+          color: white;
+          font-size: 0.875rem;
+          font-weight: 500;
+          border-radius: 0.75rem;
+          transition: all 0.2s;
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+        }
+        .btn-primary:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 20px rgba(59, 130, 246, 0.35);
+        }
+        .btn-primary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          transform: none;
+        }
+        .btn-glass {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.625rem 1.25rem;
+          background: rgba(255, 255, 255, 0.05);
+          backdrop-filter: blur(12px);
+          color: #e2e8f0;
+          font-size: 0.875rem;
+          font-weight: 500;
+          border-radius: 0.75rem;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          transition: all 0.2s;
+        }
+        .btn-glass:hover {
+          background: rgba(255, 255, 255, 0.1);
+          border-color: rgba(255, 255, 255, 0.2);
+          color: white;
+        }
+        .glass-card {
+          background: rgba(255, 255, 255, 0.03);
+          backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          border-radius: 1rem;
+        }
+      `}</style>
     </div>
   );
 }
