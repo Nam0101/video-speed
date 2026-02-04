@@ -22,7 +22,26 @@ import {
   Image as ImageIcon,
   Filter,
   SlidersHorizontal,
+  TrendingUp,
+  PieChart,
 } from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import { apiClient, TrackingItem, TrackingResponse } from '@/lib/api-client';
 
 // ==================== UTILITIES ====================
@@ -336,14 +355,29 @@ export default function TrackingPage() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [showCharts, setShowCharts] = useState(true);
 
   const fetchTracking = async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await apiClient.getTracking(1, 100); // Get data for client-side filtering
-      setRecords(response.data);
-      setPagination(response.pagination);
+      // Fetch multiple pages to get all data
+      let allRecords: TrackingItem[] = [];
+      let page = 1;
+      let hasMore = true;
+
+      while (hasMore && page <= 30) { // Max 30 pages (3000 records)
+        const response = await apiClient.getTracking(page, 100);
+        allRecords = [...allRecords, ...response.data];
+        setPagination(response.pagination);
+
+        if (response.data.length < 100 || allRecords.length >= response.pagination.total) {
+          hasMore = false;
+        }
+        page++;
+      }
+
+      setRecords(allRecords);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể tải dữ liệu');
     } finally {
@@ -556,6 +590,228 @@ export default function TrackingPage() {
             ))
           )}
         </section>
+
+        {/* Charts Section */}
+        {!loading && versionedRecords.length > 0 && (
+          <section className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={() => setShowCharts(!showCharts)}
+                className="flex items-center gap-2 text-sm font-medium text-slate-300 hover:text-white transition-colors cursor-pointer"
+              >
+                <TrendingUp className="w-4 h-4" />
+                Analytics Charts
+                <ChevronDown className={`w-4 h-4 transition-transform ${showCharts ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            {showCharts && (
+              <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                {/* Requests Over Time - Area Chart */}
+                <div className="rounded-2xl bg-white/[0.03] backdrop-blur-xl border border-white/[0.05] p-5 lg:col-span-2">
+                  <h3 className="text-sm font-semibold text-slate-400 mb-4">Requests Over Time (Last 7 Days)</h3>
+                  <div className="h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={(() => {
+                          const dailyMap = new Map<string, number>();
+                          const last7Days = [];
+                          for (let i = 6; i >= 0; i--) {
+                            const d = new Date();
+                            d.setDate(d.getDate() - i);
+                            const key = d.toISOString().split('T')[0];
+                            dailyMap.set(key, 0);
+                            last7Days.push(key);
+                          }
+                          versionedRecords.forEach((item) => {
+                            const dateKey = new Date(item.date).toISOString().split('T')[0];
+                            if (dailyMap.has(dateKey)) {
+                              dailyMap.set(dateKey, (dailyMap.get(dateKey) || 0) + 1);
+                            }
+                          });
+                          return last7Days.map((date) => ({
+                            date: new Date(date).toLocaleDateString('vi-VN', { day: 'numeric', month: 'short' }),
+                            requests: dailyMap.get(date) || 0,
+                          }));
+                        })()}
+                        margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                      >
+                        <defs>
+                          <linearGradient id="colorRequests" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.4} />
+                            <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
+                        <YAxis stroke="#64748b" fontSize={12} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                          labelStyle={{ color: '#f1f5f9' }}
+                        />
+                        <Area type="monotone" dataKey="requests" stroke="#06b6d4" fillOpacity={1} fill="url(#colorRequests)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Functions Distribution - Pie Chart */}
+                <div className="rounded-2xl bg-white/[0.03] backdrop-blur-xl border border-white/[0.05] p-5">
+                  <h3 className="text-sm font-semibold text-slate-400 mb-4">Functions Distribution</h3>
+                  <div className="h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsPieChart>
+                        <Pie
+                          data={(() => {
+                            const funcMap = new Map<string, number>();
+                            versionedRecords.forEach((item) => {
+                              funcMap.set(item.function, (funcMap.get(item.function) || 0) + 1);
+                            });
+                            const COLORS = ['#06b6d4', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#ec4899'];
+                            return Array.from(funcMap.entries())
+                              .sort((a, b) => b[1] - a[1])
+                              .slice(0, 6)
+                              .map(([name, value], idx) => ({ name, value, fill: COLORS[idx % COLORS.length] }));
+                          })()}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={80}
+                          paddingAngle={3}
+                          dataKey="value"
+                        >
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                          labelStyle={{ color: '#f1f5f9' }}
+                        />
+                        <Legend
+                          wrapperStyle={{ fontSize: 11, color: '#94a3b8' }}
+                          formatter={(value) => <span className="text-slate-400">{value}</span>}
+                        />
+                      </RechartsPieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Countries Distribution - Bar Chart */}
+                <div className="rounded-2xl bg-white/[0.03] backdrop-blur-xl border border-white/[0.05] p-5">
+                  <h3 className="text-sm font-semibold text-slate-400 mb-4">Top Countries</h3>
+                  <div className="h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={(() => {
+                          const countryMap = new Map<string, number>();
+                          versionedRecords.forEach((item) => {
+                            const country = item.country_code || 'Unknown';
+                            countryMap.set(country, (countryMap.get(country) || 0) + 1);
+                          });
+                          return Array.from(countryMap.entries())
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 8)
+                            .map(([country, count]) => ({ country, count }));
+                        })()}
+                        layout="vertical"
+                        margin={{ top: 5, right: 20, left: 30, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis type="number" stroke="#64748b" fontSize={12} />
+                        <YAxis type="category" dataKey="country" stroke="#64748b" fontSize={11} width={40} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                          labelStyle={{ color: '#f1f5f9' }}
+                        />
+                        <Bar dataKey="count" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Health Status - Donut Chart */}
+                <div className="rounded-2xl bg-white/[0.03] backdrop-blur-xl border border-white/[0.05] p-5">
+                  <h3 className="text-sm font-semibold text-slate-400 mb-4">Health Status</h3>
+                  <div className="h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsPieChart>
+                        <Pie
+                          data={[
+                            { name: 'Healthy', value: stats.healthyCount, fill: '#10b981' },
+                            { name: 'Issues', value: stats.issueCount, fill: '#ef4444' },
+                            { name: 'Unknown', value: versionedRecords.length - stats.healthyCount - stats.issueCount, fill: '#64748b' },
+                          ].filter(d => d.value > 0)}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={80}
+                          paddingAngle={3}
+                          dataKey="value"
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                          labelStyle={{ color: '#f1f5f9' }}
+                        />
+                        <Legend
+                          wrapperStyle={{ fontSize: 11 }}
+                          formatter={(value) => <span className="text-slate-400">{value}</span>}
+                        />
+                      </RechartsPieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Response Time Trend - Line Chart */}
+                <div className="rounded-2xl bg-white/[0.03] backdrop-blur-xl border border-white/[0.05] p-5">
+                  <h3 className="text-sm font-semibold text-slate-400 mb-4">Avg Response Time (Last 7 Days)</h3>
+                  <div className="h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={(() => {
+                          const dailyResponse = new Map<string, { total: number; count: number }>();
+                          const last7Days = [];
+                          for (let i = 6; i >= 0; i--) {
+                            const d = new Date();
+                            d.setDate(d.getDate() - i);
+                            const key = d.toISOString().split('T')[0];
+                            dailyResponse.set(key, { total: 0, count: 0 });
+                            last7Days.push(key);
+                          }
+                          versionedRecords.forEach((item) => {
+                            if (item.response_time_seconds !== null && !Number.isNaN(item.response_time_seconds)) {
+                              const dateKey = new Date(item.date).toISOString().split('T')[0];
+                              const existing = dailyResponse.get(dateKey);
+                              if (existing) {
+                                existing.total += item.response_time_seconds;
+                                existing.count += 1;
+                              }
+                            }
+                          });
+                          return last7Days.map((date) => {
+                            const data = dailyResponse.get(date);
+                            return {
+                              date: new Date(date).toLocaleDateString('vi-VN', { day: 'numeric', month: 'short' }),
+                              avgTime: data && data.count > 0 ? +(data.total / data.count).toFixed(2) : 0,
+                            };
+                          });
+                        })()}
+                        margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
+                        <YAxis stroke="#64748b" fontSize={12} unit="s" />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                          labelStyle={{ color: '#f1f5f9' }}
+                          formatter={(value) => [`${value}s`, 'Avg Time']}
+                        />
+                        <Line type="monotone" dataKey="avgTime" stroke="#f59e0b" strokeWidth={2} dot={{ fill: '#f59e0b', r: 4 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Filters Section */}
         <section className="mb-6 rounded-2xl bg-white/[0.03] backdrop-blur-xl border border-white/[0.05] overflow-hidden">
