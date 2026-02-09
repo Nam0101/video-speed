@@ -370,23 +370,23 @@ export default function RemoveBackgroundPage() {
                             <h3 className="text-lg font-heading font-semibold text-[var(--foreground)]">
                                 AI Background Removal
                             </h3>
-                            <p className="mt-2 text-sm text-[var(--muted)]">
+                            <p className="mt-2 text-sm text-white/60">
                                 Sử dụng deep learning để tự động phát hiện và xóa nền ảnh.
                             </p>
-                            <div className="mt-4 grid gap-3 text-xs text-[var(--muted)]">
+                            <div className="mt-4 grid gap-3 text-xs text-white/60">
                                 <div className="flex items-center justify-between">
                                     <span>Model</span>
-                                    <span className="font-semibold text-violet-400">{pixelArtMode ? "Flood Fill" : "U2NET"}</span>
+                                    <span className="font-semibold text-white">{pixelArtMode ? "Flood Fill" : "U2NET"}</span>
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span>Output</span>
-                                    <span className="font-semibold text-[var(--foreground)]">
+                                    <span className="font-semibold text-white">
                                         {removeAlpha ? "PNG (nền trắng)" : "PNG (transparent)"}
                                     </span>
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span>Files</span>
-                                    <span className="font-semibold text-[var(--foreground)]">
+                                    <span className="font-semibold text-white">
                                         {mode === "single"
                                             ? file
                                                 ? "1 ảnh"
@@ -399,18 +399,18 @@ export default function RemoveBackgroundPage() {
                             </div>
 
                             {/* Remove Alpha Toggle */}
-                            <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                            <div className="mt-4 pt-4 border-t border-white/20">
                                 <label className="flex items-center justify-between cursor-pointer">
                                     <div>
-                                        <p className="text-sm font-medium text-[var(--foreground)]">Bỏ Alpha</p>
-                                        <p className="text-xs text-[var(--muted)]">Thay nền trong suốt bằng màu trắng</p>
+                                        <p className="text-sm font-medium text-white">Bỏ Alpha</p>
+                                        <p className="text-xs text-white/50">Thay nền trong suốt bằng màu trắng</p>
                                     </div>
                                     <button
                                         type="button"
                                         role="switch"
                                         aria-checked={removeAlpha}
                                         onClick={() => setRemoveAlpha(!removeAlpha)}
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${removeAlpha ? "bg-violet-500" : "bg-[var(--secondary)]"}`}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${removeAlpha ? "bg-white/30" : "bg-white/10"}`}
                                     >
                                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${removeAlpha ? "translate-x-6" : "translate-x-1"}`} />
                                     </button>
@@ -418,18 +418,18 @@ export default function RemoveBackgroundPage() {
                             </div>
 
                             {/* Pixel Art Mode Toggle */}
-                            <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                            <div className="mt-4 pt-4 border-t border-white/20">
                                 <label className="flex items-center justify-between cursor-pointer">
                                     <div>
-                                        <p className="text-sm font-medium text-[var(--foreground)]">Pixel Art</p>
-                                        <p className="text-xs text-[var(--muted)]">Flood-fill từ góc, giữ cạnh sắc nét</p>
+                                        <p className="text-sm font-medium text-white">Pixel Art</p>
+                                        <p className="text-xs text-white/50">Flood-fill từ góc, giữ cạnh sắc nét</p>
                                     </div>
                                     <button
                                         type="button"
                                         role="switch"
                                         aria-checked={pixelArtMode}
                                         onClick={() => setPixelArtMode(!pixelArtMode)}
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${pixelArtMode ? "bg-violet-500" : "bg-[var(--secondary)]"}`}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${pixelArtMode ? "bg-white/30" : "bg-white/10"}`}
                                     >
                                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${pixelArtMode ? "translate-x-6" : "translate-x-1"}`} />
                                     </button>
@@ -438,8 +438,8 @@ export default function RemoveBackgroundPage() {
                                 {pixelArtMode && (
                                     <div className="mt-3 space-y-2">
                                         <div className="flex items-center justify-between">
-                                            <span className="text-xs text-[var(--muted)]">Tolerance</span>
-                                            <span className="text-xs font-semibold text-violet-400">{tolerance}</span>
+                                            <span className="text-xs text-white/60">Tolerance</span>
+                                            <span className="text-xs font-semibold text-white">{tolerance}</span>
                                         </div>
                                         <input
                                             type="range"
@@ -449,7 +449,7 @@ export default function RemoveBackgroundPage() {
                                             onChange={(e) => setTolerance(Number(e.target.value))}
                                             className="w-full accent-violet-500"
                                         />
-                                        <p className="text-[10px] text-[var(--muted)]">
+                                        <p className="text-[10px] text-white/50">
                                             0 = chính xác tuyệt đối, 8-15 = chịu JPEG artifact
                                         </p>
                                     </div>
