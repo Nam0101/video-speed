@@ -32,7 +32,7 @@ const formatTime = (value: string) => {
 
 // Parse timber log line: "[D/Tag] message" => { priority, tag, message }
 const parseTimberLog = (raw: string) => {
-  const match = raw.match(/^\[([DIWEA])\/([^\]]+)\]\s*(.*)$/s);
+  const match = raw.match(/^\[([DIWEA])\/([^\]]+)\]\s*(.*)$/);
   if (!match) return { priority: "", tag: "", message: raw };
   return { priority: match[1], tag: match[2], message: match[3] };
 };
@@ -239,22 +239,20 @@ export default function LogsPage() {
           <div className="flex items-center gap-1 rounded-xl bg-white/5 border border-white/10 p-1">
             <button
               onClick={() => setViewMode("all")}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                viewMode === "all"
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${viewMode === "all"
                   ? "bg-white/10 text-white"
                   : "text-slate-500 hover:text-slate-300"
-              }`}
+                }`}
             >
               <Wifi className="w-4 h-4" />
               Events
             </button>
             <button
               onClick={() => setViewMode("timber")}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                viewMode === "timber"
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${viewMode === "timber"
                   ? "bg-gradient-to-r from-orange-500/20 to-amber-500/20 text-orange-400 border border-orange-500/20"
                   : "text-slate-500 hover:text-slate-300"
-              }`}
+                }`}
             >
               <Terminal className="w-4 h-4" />
               Timber
@@ -270,8 +268,8 @@ export default function LogsPage() {
           <button
             onClick={() => setStreaming((p) => !p)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all duration-300 ${streaming
-                ? "bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/25"
-                : "bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"
+              ? "bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/25"
+              : "bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"
               }`}
           >
             {streaming ? (
@@ -434,11 +432,10 @@ export default function LogsPage() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setAutoScroll((p) => !p)}
-                    className={`text-xs px-2 py-1 rounded font-mono transition-all ${
-                      autoScroll
+                    className={`text-xs px-2 py-1 rounded font-mono transition-all ${autoScroll
                         ? "bg-green-500/15 text-green-400"
                         : "bg-white/5 text-slate-500"
-                    }`}
+                      }`}
                   >
                     auto-scroll {autoScroll ? "on" : "off"}
                   </button>
