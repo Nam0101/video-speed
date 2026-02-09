@@ -358,7 +358,19 @@ class APIClient {
         return response.blob();
     }
 
-    async removeBackground(file: File, options?: { removeAlpha?: boolean; bgColor?: string; method?: 'ai' | 'flood'; tolerance?: number }): Promise<Blob> {
+    async removeBackground(
+        file: File,
+        options?: {
+            removeAlpha?: boolean;
+            bgColor?: string;
+            method?: 'ai' | 'ai_hard' | 'flood' | 'opencv_grid';
+            tolerance?: number;
+            alphaThreshold?: number;
+            gridThreshold?: number;
+            gridKernel?: number;
+            gridDilate?: number;
+        }
+    ): Promise<Blob> {
         const formData = new FormData();
         formData.append('file', file);
         if (options?.removeAlpha) {
@@ -373,6 +385,18 @@ class APIClient {
         if (options?.tolerance !== undefined) {
             formData.append('tolerance', options.tolerance.toString());
         }
+        if (options?.alphaThreshold !== undefined) {
+            formData.append('alpha_threshold', options.alphaThreshold.toString());
+        }
+        if (options?.gridThreshold !== undefined) {
+            formData.append('grid_threshold', options.gridThreshold.toString());
+        }
+        if (options?.gridKernel !== undefined) {
+            formData.append('grid_kernel', options.gridKernel.toString());
+        }
+        if (options?.gridDilate !== undefined) {
+            formData.append('grid_dilate', options.gridDilate.toString());
+        }
 
         const response = await fetch(`${this.baseURL}/remove-background`, {
             method: 'POST',
@@ -386,7 +410,19 @@ class APIClient {
         return response.blob();
     }
 
-    async removeBackgroundZip(files: File[], options?: { removeAlpha?: boolean; bgColor?: string; method?: 'ai' | 'flood'; tolerance?: number }): Promise<Blob> {
+    async removeBackgroundZip(
+        files: File[],
+        options?: {
+            removeAlpha?: boolean;
+            bgColor?: string;
+            method?: 'ai' | 'ai_hard' | 'flood' | 'opencv_grid';
+            tolerance?: number;
+            alphaThreshold?: number;
+            gridThreshold?: number;
+            gridKernel?: number;
+            gridDilate?: number;
+        }
+    ): Promise<Blob> {
         const formData = new FormData();
         files.forEach((file) => formData.append('files', file));
         if (options?.removeAlpha) {
@@ -400,6 +436,18 @@ class APIClient {
         }
         if (options?.tolerance !== undefined) {
             formData.append('tolerance', options.tolerance.toString());
+        }
+        if (options?.alphaThreshold !== undefined) {
+            formData.append('alpha_threshold', options.alphaThreshold.toString());
+        }
+        if (options?.gridThreshold !== undefined) {
+            formData.append('grid_threshold', options.gridThreshold.toString());
+        }
+        if (options?.gridKernel !== undefined) {
+            formData.append('grid_kernel', options.gridKernel.toString());
+        }
+        if (options?.gridDilate !== undefined) {
+            formData.append('grid_dilate', options.gridDilate.toString());
         }
 
         const response = await fetch(`${this.baseURL}/remove-background-zip`, {

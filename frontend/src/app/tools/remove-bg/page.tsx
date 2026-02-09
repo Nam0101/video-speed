@@ -18,6 +18,8 @@ import { apiClient } from "@/lib/api-client";
 import { downloadBlob, formatBytes } from "@/lib/file-utils";
 
 type Mode = "single" | "batch";
+type RemoveMethod = "ai" | "ai_hard" | "flood" | "opencv_grid";
+type PixelMethod = Exclude<RemoveMethod, "ai">;
 
 export default function RemoveBackgroundPage() {
     const [mode, setMode] = useState<Mode>("single");
@@ -30,8 +32,23 @@ export default function RemoveBackgroundPage() {
     const [resultUrl, setResultUrl] = useState<string | null>(null);
     const [removeAlpha, setRemoveAlpha] = useState(false);
     const [pixelArtMode, setPixelArtMode] = useState(false);
-    const [tolerance, setTolerance] = useState(10);
+    const [pixelMethod, setPixelMethod] = useState<PixelMethod>("ai_hard");
+    const [tolerance, setTolerance] = useState(8);
+    const [alphaThreshold, setAlphaThreshold] = useState(128);
+    const [gridThreshold, setGridThreshold] = useState(200);
+    const [gridKernel, setGridKernel] = useState(2);
+    const [gridDilate, setGridDilate] = useState(1);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const activeMethod: RemoveMethod = pixelArtMode ? pixelMethod : "ai";
+    const methodLabel =
+        activeMethod === "ai"
+            ? "U2NET"
+            : activeMethod === "ai_hard"
+                ? "AI + Hard Edge"
+                : activeMethod === "flood"
+                    ? "Flood Fill (4-neighbor)"
+                    : "OpenCV Grid";
 
     const handleDrag = useCallback((event: React.DragEvent) => {
         event.preventDefault();
@@ -94,12 +111,24 @@ export default function RemoveBackgroundPage() {
 
             try {
                 setProcessing(true);
-                setStatus(pixelArtMode ? "processing:Đang xóa nền (Pixel Art flood-fill)..." : "processing:Đang xóa nền bằng AI...");
+                const processingText =
+                    activeMethod === "ai"
+                        ? "Đang xóa nền bằng AI..."
+                        : activeMethod === "ai_hard"
+                            ? "Đang xóa nền (AI + hard edge cho pixel art)..."
+                            : activeMethod === "flood"
+                                ? "Đang xóa nền (Flood Fill 4-neighbor)..."
+                                : "Đang xóa nền (OpenCV morphology)...";
+                setStatus(`processing:${processingText}`);
                 const blob = await apiClient.removeBackground(file, {
                     removeAlpha,
                     bgColor: "#FFFFFF",
-                    method: pixelArtMode ? "flood" : "ai",
+                    method: activeMethod,
                     tolerance,
+                    alphaThreshold,
+                    gridThreshold,
+                    gridKernel,
+                    gridDilate,
                 });
 
                 // Create preview URL for result
@@ -125,12 +154,18 @@ export default function RemoveBackgroundPage() {
 
             try {
                 setProcessing(true);
-                setStatus(`processing:Đang xóa nền ${files.length} ảnh${pixelArtMode ? " (Pixel Art)" : ""}...`);
+                setStatus(
+                    `processing:Đang xóa nền ${files.length} ảnh (${methodLabel})...`
+                );
                 const blob = await apiClient.removeBackgroundZip(files, {
                     removeAlpha,
                     bgColor: "#FFFFFF",
-                    method: pixelArtMode ? "flood" : "ai",
+                    method: activeMethod,
                     tolerance,
+                    alphaThreshold,
+                    gridThreshold,
+                    gridKernel,
+                    gridDilate,
                 });
                 downloadBlob(blob, `nobg_${files.length}_images.zip`);
                 setStatus(`success:Đã xóa nền ${files.length} ảnh thành công!`);
@@ -371,12 +406,12 @@ export default function RemoveBackgroundPage() {
                                 AI Background Removal
                             </h3>
                             <p className="mt-2 text-sm text-white/60">
-                                Sử dụng deep learning để tự động phát hiện và xóa nền ảnh.
+                                Chọn engine phù hợp: AI cho chất lượng cao, hoặc Pixel Art mode để giữ cạnh vuông sắc nét.
                             </p>
                             <div className="mt-4 grid gap-3 text-xs text-white/60">
                                 <div className="flex items-center justify-between">
                                     <span>Model</span>
-                                    <span className="font-semibold text-white">{pixelArtMode ? "Flood Fill" : "U2NET"}</span>
+                                    <span className="font-semibold text-white">{methodLabel}</span>
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span>Output</span>
@@ -422,7 +457,7 @@ export default function RemoveBackgroundPage() {
                                 <label className="flex items-center justify-between cursor-pointer">
                                     <div>
                                         <p className="text-sm font-medium text-white">Pixel Art</p>
-                                        <p className="text-xs text-white/50">Flood-fill từ góc, giữ cạnh sắc nét</p>
+                                        <p className="text-xs text-white/50">Bật pipeline tối ưu cho sprite pixel/grid</p>
                                     </div>
                                     <button
                                         type="button"
@@ -436,22 +471,110 @@ export default function RemoveBackgroundPage() {
                                 </label>
 
                                 {pixelArtMode && (
-                                    <div className="mt-3 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs text-white/60">Tolerance</span>
-                                            <span className="text-xs font-semibold text-white">{tolerance}</span>
+                                    <div className="mt-3 space-y-3">
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {([
+                                                { id: "ai_hard", label: "AI + Hard Edge", hint: "Chất lượng cao nhất, giữ viền cứng" },
+                                                { id: "flood", label: "Flood Fill", hint: "Nhanh, chuẩn pixel nếu nền liên thông" },
+                                                { id: "opencv_grid", label: "OpenCV Grid", hint: "Rất nhanh cho nền lưới rõ" },
+                                            ] as { id: PixelMethod; label: string; hint: string }[]).map((option) => (
+                                                <button
+                                                    key={option.id}
+                                                    type="button"
+                                                    onClick={() => setPixelMethod(option.id)}
+                                                    className={`rounded-lg border px-3 py-2 text-left transition ${pixelMethod === option.id
+                                                        ? "border-violet-300 bg-violet-500/20 text-white"
+                                                        : "border-white/20 bg-white/5 text-white/70 hover:bg-white/10"
+                                                        }`}
+                                                >
+                                                    <p className="text-xs font-semibold">{option.label}</p>
+                                                    <p className="text-[10px] opacity-80">{option.hint}</p>
+                                                </button>
+                                            ))}
                                         </div>
-                                        <input
-                                            type="range"
-                                            min={0}
-                                            max={50}
-                                            value={tolerance}
-                                            onChange={(e) => setTolerance(Number(e.target.value))}
-                                            className="w-full accent-violet-500"
-                                        />
-                                        <p className="text-[10px] text-white/50">
-                                            0 = chính xác tuyệt đối, 8-15 = chịu JPEG artifact
-                                        </p>
+
+                                        {pixelMethod === "flood" && (
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-white/60">Flood tolerance</span>
+                                                    <span className="text-xs font-semibold text-white">{tolerance}</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={50}
+                                                    value={tolerance}
+                                                    onChange={(e) => setTolerance(Number(e.target.value))}
+                                                    className="w-full accent-violet-500"
+                                                />
+                                                <p className="text-[10px] text-white/50">
+                                                    0 = khớp màu tuyệt đối, 6-12 = chịu nhiễu JPEG nhẹ
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {pixelMethod === "ai_hard" && (
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-white/60">Alpha threshold</span>
+                                                    <span className="text-xs font-semibold text-white">{alphaThreshold}</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={255}
+                                                    value={alphaThreshold}
+                                                    onChange={(e) => setAlphaThreshold(Number(e.target.value))}
+                                                    className="w-full accent-violet-500"
+                                                />
+                                                <p className="text-[10px] text-white/50">
+                                                    Tăng để cứng viền hơn, giảm để giữ chi tiết mảnh.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {pixelMethod === "opencv_grid" && (
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-white/60">Binary threshold</span>
+                                                    <span className="text-xs font-semibold text-white">{gridThreshold}</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={255}
+                                                    value={gridThreshold}
+                                                    onChange={(e) => setGridThreshold(Number(e.target.value))}
+                                                    className="w-full accent-violet-500"
+                                                />
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <label className="text-[10px] text-white/60">
+                                                        Kernel
+                                                        <select
+                                                            value={gridKernel}
+                                                            onChange={(e) => setGridKernel(Number(e.target.value))}
+                                                            className="mt-1 w-full rounded-md border border-white/20 bg-black/20 px-2 py-1 text-xs text-white outline-none"
+                                                        >
+                                                            {[1, 2, 3, 4].map((v) => (
+                                                                <option key={v} value={v}>{v}</option>
+                                                            ))}
+                                                        </select>
+                                                    </label>
+                                                    <label className="text-[10px] text-white/60">
+                                                        Dilate
+                                                        <select
+                                                            value={gridDilate}
+                                                            onChange={(e) => setGridDilate(Number(e.target.value))}
+                                                            className="mt-1 w-full rounded-md border border-white/20 bg-black/20 px-2 py-1 text-xs text-white outline-none"
+                                                        >
+                                                            {[0, 1, 2, 3].map((v) => (
+                                                                <option key={v} value={v}>{v}</option>
+                                                            ))}
+                                                        </select>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>

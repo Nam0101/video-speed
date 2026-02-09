@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime
 import sqlite3
+import io
+
+from PIL import Image
 
 from flask import (
     Flask,
@@ -34,8 +37,6 @@ except ImportError:
 # Lazy load rembg for background removal
 try:
     from rembg import remove as rembg_remove, new_session as rembg_new_session
-    from PIL import Image
-    import io
     HAS_REMBG = True
 except ImportError:
     HAS_REMBG = False
@@ -300,83 +301,235 @@ def _allowed_image_suffix(filename: str) -> str | None:
 
 
 def _flood_fill_remove_bg(image_data: bytes, tolerance: int = 10) -> bytes:
-    """Remove background using multi-color flood-fill from image borders.
+    """Remove pixel-art background with OpenCV flood-fill (4-neighbor).
 
-    Detects all unique background colours along the image border, builds a
-    candidate mask of every pixel matching any of those colours (within
-    *tolerance*), then floods inward from the border keeping only
-    border-connected regions.  Works well for pixel art on flat or
-    grid-paper backgrounds.
-
-    Args:
-        image_data: Raw image bytes (PNG/JPG/WebP).
-        tolerance: Max per-channel colour distance to still count as
-                   "same as background".  0 = exact match only,
-                   8-15 is good for JPEG artefacts.
-
-    Returns:
-        PNG bytes with RGBA (background pixels have alpha=0).
+    - Flood from corners and trusted border seeds.
+    - Use hard alpha (0/255) to preserve crisp pixel edges.
     """
+    import cv2
     import numpy as np
-    from collections import deque
 
+    tolerance = max(0, min(50, int(tolerance)))
+
+    # Decode from bytes directly for speed.
+    np_buf = np.frombuffer(image_data, dtype=np.uint8)
+    img = cv2.imdecode(np_buf, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise ValueError("Không thể đọc ảnh đầu vào")
+
+    if img.ndim == 2:
+        bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        alpha0 = np.full(img.shape, 255, dtype=np.uint8)
+    elif img.shape[2] == 4:
+        bgr = img[:, :, :3].copy()
+        alpha0 = img[:, :, 3].copy()
+    else:
+        bgr = img[:, :, :3].copy()
+        alpha0 = np.full(img.shape[:2], 255, dtype=np.uint8)
+
+    h, w = bgr.shape[:2]
+    if h == 0 or w == 0:
+        out = io.BytesIO()
+        Image.fromarray(np.zeros((1, 1, 4), dtype=np.uint8), "RGBA").save(out, format="PNG")
+        return out.getvalue()
+
+    mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+    flags = (
+        4  # 4-connectivity to avoid diagonal leaking across 1px gaps
+        | (255 << 8)
+        | cv2.FLOODFILL_MASK_ONLY
+        | cv2.FLOODFILL_FIXED_RANGE
+    )
+    lo = (tolerance, tolerance, tolerance)
+    up = (tolerance, tolerance, tolerance)
+
+    corners: list[tuple[int, int]] = [
+        (0, 0),
+        (w - 1, 0),
+        (0, h - 1),
+        (w - 1, h - 1),
+    ]
+
+    # Use the dominant corner palette as trusted background references.
+    corner_colors = [bgr[y, x].astype(np.int16) for x, y in corners]
+    seed_color_tol = max(4, tolerance + 2)
+    corner_supports: list[int] = []
+    for ref in corner_colors:
+        support = 0
+        for probe in corner_colors:
+            if np.all(np.abs(ref - probe) <= seed_color_tol):
+                support += 1
+        corner_supports.append(support)
+
+    best_support = max(corner_supports) if corner_supports else 0
+    ref_colors = [
+        corner_colors[i]
+        for i, support in enumerate(corner_supports)
+        if support == best_support
+    ] or [corner_colors[0]]
+
+    def is_bg_like_seed(x: int, y: int) -> bool:
+        color = bgr[y, x].astype(np.int16)
+        return any(np.all(np.abs(color - ref) <= seed_color_tol) for ref in ref_colors)
+
+    seeds: list[tuple[int, int]] = []
+    used: set[tuple[int, int]] = set()
+
+    def add_seed(x: int, y: int):
+        if 0 <= x < w and 0 <= y < h and (x, y) not in used:
+            used.add((x, y))
+            seeds.append((x, y))
+
+    # Always include corners, then add border probes matching the corner palette.
+    for x, y in corners:
+        add_seed(x, y)
+
+    edge_step = max(10, min(h, w) // 16)
+    for x in range(0, w, edge_step):
+        if is_bg_like_seed(x, 0):
+            add_seed(x, 0)
+        if is_bg_like_seed(x, h - 1):
+            add_seed(x, h - 1)
+    for y in range(0, h, edge_step):
+        if is_bg_like_seed(0, y):
+            add_seed(0, y)
+        if is_bg_like_seed(w - 1, y):
+            add_seed(w - 1, y)
+
+    for x, y in seeds:
+        cv2.floodFill(
+            bgr,
+            mask,
+            (x, y),
+            (0, 0, 0),
+            loDiff=lo,
+            upDiff=up,
+            flags=flags,
+        )
+
+    bg_mask = mask[1:h + 1, 1:w + 1] == 255
+    out = cv2.cvtColor(bgr, cv2.COLOR_BGR2BGRA)
+    out[:, :, 3] = alpha0
+    out[bg_mask, 3] = 0
+
+    # Hard alpha for pixel-art crisp edges.
+    out[:, :, 3] = np.where(out[:, :, 3] > 127, 255, 0).astype(np.uint8)
+
+    ok, encoded = cv2.imencode(".png", out)
+    if not ok:
+        raise ValueError("Không thể encode ảnh PNG đầu ra")
+    return encoded.tobytes()
+
+
+def _hard_threshold_alpha(
+    image_data: bytes,
+    *,
+    alpha_threshold: int = 128,
+    auto_crop: bool = False,
+) -> bytes:
+    """Force alpha channel into hard 0/255 values for crisp pixel-art edges."""
+    import numpy as np
+
+    alpha_threshold = max(0, min(255, int(alpha_threshold)))
     img = Image.open(io.BytesIO(image_data)).convert("RGBA")
-    arr = np.array(img)
-    rgb = arr[..., :3].astype(np.int16)
-    h, w = rgb.shape[:2]
+    arr = np.array(img, dtype=np.uint8)
+    alpha = arr[..., 3]
+    arr[..., 3] = np.where(alpha > alpha_threshold, 255, 0).astype(np.uint8)
+    out_img = Image.fromarray(arr, "RGBA")
 
-    # --- 1. collect border pixel coordinates & colours ------------------
-    border_coords = []
-    for x in range(w):
-        border_coords.append((0, x))
-        border_coords.append((h - 1, x))
-    for y in range(1, h - 1):
-        border_coords.append((y, 0))
-        border_coords.append((y, w - 1))
-
-    # --- 2. deduplicate border colours into clusters --------------------
-    cluster_tol = max(tolerance * 2, 15)
-    unique_bg = []
-    for y, x in border_coords:
-        c = rgb[y, x]
-        matched = False
-        for uc in unique_bg:
-            if np.all(np.abs(c - uc) <= cluster_tol):
-                matched = True
-                break
-        if not matched:
-            unique_bg.append(c.copy())
-
-    # --- 3. build bg-candidate mask (matches ANY border colour) ---------
-    bg_candidate = np.zeros((h, w), dtype=bool)
-    for uc in unique_bg:
-        diff = np.abs(rgb - uc.reshape(1, 1, 3))
-        bg_candidate |= np.all(diff <= tolerance, axis=2)
-
-    # --- 4. BFS from border through bg-candidate pixels -----------------
-    visited = np.zeros((h, w), dtype=bool)
-    bg_mask = np.zeros((h, w), dtype=bool)
-    queue = deque()
-
-    for y, x in border_coords:
-        if bg_candidate[y, x] and not visited[y, x]:
-            visited[y, x] = True
-            queue.append((y, x))
-
-    while queue:
-        y, x = queue.popleft()
-        bg_mask[y, x] = True
-        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-            ny, nx = y + dy, x + dx
-            if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx] and bg_candidate[ny, nx]:
-                visited[ny, nx] = True
-                queue.append((ny, nx))
-
-    arr[bg_mask, 3] = 0
+    if auto_crop:
+        bbox = out_img.getbbox()
+        if bbox:
+            out_img = out_img.crop(bbox)
 
     out = io.BytesIO()
-    Image.fromarray(arr, "RGBA").save(out, format="PNG")
+    out_img.save(out, format="PNG")
     return out.getvalue()
+
+
+def _opencv_grid_remove_bg(
+    image_data: bytes,
+    *,
+    binary_threshold: int = 200,
+    kernel_size: int = 2,
+    dilate_iters: int = 1,
+) -> bytes:
+    """Remove grid-like backgrounds using threshold + morphology + largest component."""
+    import cv2
+    import numpy as np
+
+    binary_threshold = max(0, min(255, int(binary_threshold)))
+    kernel_size = max(1, min(7, int(kernel_size)))
+    dilate_iters = max(0, min(5, int(dilate_iters)))
+
+    np_buf = np.frombuffer(image_data, dtype=np.uint8)
+    img = cv2.imdecode(np_buf, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise ValueError("Không thể đọc ảnh đầu vào")
+
+    if img.ndim == 2:
+        bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        alpha0 = np.full(img.shape, 255, dtype=np.uint8)
+    elif img.shape[2] == 4:
+        bgr = img[:, :, :3].copy()
+        alpha0 = img[:, :, 3].copy()
+    else:
+        bgr = img[:, :, :3].copy()
+        alpha0 = np.full(img.shape[:2], 255, dtype=np.uint8)
+
+    h, w = bgr.shape[:2]
+    if h == 0 or w == 0:
+        raise ValueError("Ảnh đầu vào rỗng")
+
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, binary_threshold, 255, cv2.THRESH_BINARY_INV)
+
+    kernel = np.ones((kernel_size, kernel_size), np.uint8)
+    mask_clean = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+
+    # Keep the largest connected component not touching borders (usually the sprite).
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask_clean, connectivity=8)
+    best_label = 0
+    best_area = 0
+    for label in range(1, num_labels):
+        x, y, ww, hh, area = stats[label]
+        touches_border = (x == 0 or y == 0 or (x + ww) >= w or (y + hh) >= h)
+        if touches_border:
+            continue
+        if area > best_area:
+            best_area = int(area)
+            best_label = label
+
+    final_mask = np.zeros_like(gray, dtype=np.uint8)
+    if best_label > 0:
+        final_mask[labels == best_label] = 255
+    else:
+        contours, _ = cv2.findContours(mask_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            raise ValueError("Không tìm thấy đối tượng để tách nền")
+        c = max(contours, key=cv2.contourArea)
+        cv2.drawContours(final_mask, [c], -1, 255, thickness=cv2.FILLED)
+
+    # Expand 1px to recover thin outline pixels around the sprite.
+    if dilate_iters > 0:
+        final_mask = cv2.dilate(final_mask, kernel, iterations=dilate_iters)
+
+    alpha = np.where(final_mask > 0, alpha0, 0).astype(np.uint8)
+    alpha = np.where(alpha > 127, 255, 0).astype(np.uint8)
+
+    rgba = cv2.cvtColor(bgr, cv2.COLOR_BGR2BGRA)
+    rgba[:, :, 3] = alpha
+
+    ys, xs = np.where(alpha > 0)
+    if ys.size > 0 and xs.size > 0:
+        y0, y1 = int(ys.min()), int(ys.max()) + 1
+        x0, x1 = int(xs.min()), int(xs.max()) + 1
+        rgba = rgba[y0:y1, x0:x1]
+
+    ok, encoded = cv2.imencode(".png", rgba)
+    if not ok:
+        raise ValueError("Không thể encode ảnh PNG đầu ra")
+    return encoded.tobytes()
 
 
 def _remove_alpha(image_data: bytes, bg_color: tuple = (255, 255, 255)) -> bytes:
@@ -1321,16 +1474,27 @@ def remove_background():
 
     Args (form data):
         file: Image file (PNG/JPG/JPEG/WebP)
-        method: 'ai' (default, rembg U2NET) or 'flood' (flood-fill for pixel art)
-        tolerance: Integer 0-50 for flood-fill tolerance (default 10)
+        method:
+            - 'ai': rembg U2NET (default)
+            - 'ai_hard': rembg + hard alpha threshold (pixel-art friendly)
+            - 'flood': flood-fill from borders
+            - 'opencv_grid': threshold + morphology for grid-like backgrounds
+        tolerance: Integer 0-50 for flood-fill tolerance (default 10, flood only)
+        alpha_threshold: Integer 0-255 for hard alpha in ai_hard (default 128)
+        grid_threshold: Integer 0-255 binary threshold for opencv_grid (default 200)
+        grid_kernel: Integer 1-7 morphology kernel size for opencv_grid (default 2)
+        grid_dilate: Integer 0-5 dilate iterations for opencv_grid (default 1)
         remove_alpha: Optional. If '1'/'true', replace transparent bg with solid color
         bg_color: Optional. Hex color for background when remove_alpha=true (default: #FFFFFF)
 
     Returns a PNG image with transparent or solid background.
     """
     method = request.form.get("method", "ai").strip().lower()
+    allowed_methods = {"ai", "ai_hard", "flood", "opencv_grid"}
+    if method not in allowed_methods:
+        abort(400, "method không hợp lệ")
 
-    if method == "ai" and not HAS_REMBG:
+    if method in {"ai", "ai_hard"} and not HAS_REMBG:
         abort(500, "Thư viện rembg không được cài đặt. Vui lòng cài đặt 'rembg[cpu]'.")
 
     file = request.files.get("file")
@@ -1346,7 +1510,36 @@ def remove_background():
     remove_alpha = _parse_bool(request.form.get("remove_alpha", "0"))
     bg_color_hex = request.form.get("bg_color", "#FFFFFF")
     bg_color = _parse_hex_color(bg_color_hex)
-    tolerance = min(50, max(0, int(request.form.get("tolerance", "10"))))
+    tolerance = _validate_positive_int(
+        request.form.get("tolerance", "10"),
+        name="tolerance",
+        min_value=0,
+        max_value=50,
+    )
+    alpha_threshold = _validate_positive_int(
+        request.form.get("alpha_threshold", "128"),
+        name="alpha_threshold",
+        min_value=0,
+        max_value=255,
+    )
+    grid_threshold = _validate_positive_int(
+        request.form.get("grid_threshold", "200"),
+        name="grid_threshold",
+        min_value=0,
+        max_value=255,
+    )
+    grid_kernel = _validate_positive_int(
+        request.form.get("grid_kernel", "2"),
+        name="grid_kernel",
+        min_value=1,
+        max_value=7,
+    )
+    grid_dilate = _validate_positive_int(
+        request.form.get("grid_dilate", "1"),
+        name="grid_dilate",
+        min_value=0,
+        max_value=5,
+    )
 
     input_name = f"{uuid.uuid4().hex}{suffix}"
     input_path = UPLOAD_DIR / input_name
@@ -1360,6 +1553,21 @@ def remove_background():
 
         if method == "flood":
             output_data = _flood_fill_remove_bg(input_data, tolerance=tolerance)
+        elif method == "ai_hard":
+            session = _get_rembg_session()
+            ai_data = rembg_remove(input_data, session=session)
+            output_data = _hard_threshold_alpha(
+                ai_data,
+                alpha_threshold=alpha_threshold,
+                auto_crop=True,
+            )
+        elif method == "opencv_grid":
+            output_data = _opencv_grid_remove_bg(
+                input_data,
+                binary_threshold=grid_threshold,
+                kernel_size=grid_kernel,
+                dilate_iters=grid_dilate,
+            )
         else:
             # Remove background using rembg with session reuse
             session = _get_rembg_session()
@@ -1398,16 +1606,27 @@ def remove_background_zip():
 
     Args (form data):
         files: Image files (PNG/JPG/JPEG/WebP)
-        method: 'ai' (default, rembg U2NET) or 'flood' (flood-fill for pixel art)
-        tolerance: Integer 0-50 for flood-fill tolerance (default 10)
+        method:
+            - 'ai': rembg U2NET (default)
+            - 'ai_hard': rembg + hard alpha threshold (pixel-art friendly)
+            - 'flood': flood-fill from borders
+            - 'opencv_grid': threshold + morphology for grid-like backgrounds
+        tolerance: Integer 0-50 for flood-fill tolerance (default 10, flood only)
+        alpha_threshold: Integer 0-255 for hard alpha in ai_hard (default 128)
+        grid_threshold: Integer 0-255 binary threshold for opencv_grid (default 200)
+        grid_kernel: Integer 1-7 morphology kernel size for opencv_grid (default 2)
+        grid_dilate: Integer 0-5 dilate iterations for opencv_grid (default 1)
         remove_alpha: Optional. If '1'/'true', replace transparent bg with solid color
         bg_color: Optional. Hex color for background when remove_alpha=true (default: #FFFFFF)
 
     Returns a ZIP containing PNG images with transparent or solid backgrounds.
     """
     method = request.form.get("method", "ai").strip().lower()
+    allowed_methods = {"ai", "ai_hard", "flood", "opencv_grid"}
+    if method not in allowed_methods:
+        abort(400, "method không hợp lệ")
 
-    if method == "ai" and not HAS_REMBG:
+    if method in {"ai", "ai_hard"} and not HAS_REMBG:
         abort(500, "Thư viện rembg không được cài đặt. Vui lòng cài đặt 'rembg[cpu]'.")
 
     files = request.files.getlist("files")
@@ -1418,7 +1637,36 @@ def remove_background_zip():
     remove_alpha = _parse_bool(request.form.get("remove_alpha", "0"))
     bg_color_hex = request.form.get("bg_color", "#FFFFFF")
     bg_color = _parse_hex_color(bg_color_hex)
-    tolerance = min(50, max(0, int(request.form.get("tolerance", "10"))))
+    tolerance = _validate_positive_int(
+        request.form.get("tolerance", "10"),
+        name="tolerance",
+        min_value=0,
+        max_value=50,
+    )
+    alpha_threshold = _validate_positive_int(
+        request.form.get("alpha_threshold", "128"),
+        name="alpha_threshold",
+        min_value=0,
+        max_value=255,
+    )
+    grid_threshold = _validate_positive_int(
+        request.form.get("grid_threshold", "200"),
+        name="grid_threshold",
+        min_value=0,
+        max_value=255,
+    )
+    grid_kernel = _validate_positive_int(
+        request.form.get("grid_kernel", "2"),
+        name="grid_kernel",
+        min_value=1,
+        max_value=7,
+    )
+    grid_dilate = _validate_positive_int(
+        request.form.get("grid_dilate", "1"),
+        name="grid_dilate",
+        min_value=0,
+        max_value=5,
+    )
 
     batch_dir = OUTPUT_DIR / f"rembg_{uuid.uuid4().hex}"
     batch_dir.mkdir(parents=True, exist_ok=True)
@@ -1427,8 +1675,8 @@ def remove_background_zip():
     processed_files: list[tuple[str, Path]] = []
 
     try:
-        # Get session once for all images (only needed for AI method)
-        session = _get_rembg_session() if method == "ai" else None
+        # Get session once for all images (only needed for rembg methods)
+        session = _get_rembg_session() if method in {"ai", "ai_hard"} else None
 
         for index, f in enumerate(files, start=1):
             if f.filename is None or f.filename == "":
@@ -1449,6 +1697,20 @@ def remove_background_zip():
 
                 if method == "flood":
                     output_data = _flood_fill_remove_bg(input_data, tolerance=tolerance)
+                elif method == "ai_hard":
+                    ai_data = rembg_remove(input_data, session=session)
+                    output_data = _hard_threshold_alpha(
+                        ai_data,
+                        alpha_threshold=alpha_threshold,
+                        auto_crop=True,
+                    )
+                elif method == "opencv_grid":
+                    output_data = _opencv_grid_remove_bg(
+                        input_data,
+                        binary_threshold=grid_threshold,
+                        kernel_size=grid_kernel,
+                        dilate_iters=grid_dilate,
+                    )
                 else:
                     output_data = rembg_remove(input_data, session=session)
                 
