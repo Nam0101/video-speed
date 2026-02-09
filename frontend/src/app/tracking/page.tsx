@@ -86,11 +86,12 @@ const getHealthLabel = (value: boolean | null) => {
 const getPlatformLabel = (deviceId: string | null | undefined) => {
   if (!deviceId) return { label: 'Unknown', tone: 'bg-slate-700/50 text-slate-400' };
   const normalized = deviceId.toUpperCase();
+  const iosUuidPattern = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/;
   if (normalized.startsWith('AID')) {
     return { label: 'Android', tone: 'bg-emerald-500/20 text-emerald-400' };
   }
-  if (normalized.startsWith('DID') || normalized.startsWith('IOS')) {
-    return { label: 'iOS', tone: 'bg-indigo-500/20 text-indigo-400' };
+  if (normalized.startsWith('DID') || normalized.startsWith('IOS') || iosUuidPattern.test(normalized)) {
+    return { label: 'Ios', tone: 'bg-indigo-500/20 text-indigo-400' };
   }
   return { label: 'Unknown', tone: 'bg-slate-700/50 text-slate-400' };
 };
