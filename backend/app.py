@@ -1359,6 +1359,27 @@ def health():
     return {"status": "ok"}
 
 
+@app.post("/api/timber-log")
+def timber_log():
+    data = request.get_json(silent=True) or {}
+    log_message = data.get("log", "")
+    if not log_message:
+        return jsonify({"status": "error", "message": "missing log field"}), 400
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        conn = get_db_connection()
+        conn.execute(
+            'INSERT INTO logs (timestamp, event_name, device_name, version_code, params) VALUES (?, ?, ?, ?, ?)',
+            (timestamp, "timber", "RemoteDebug", "", json.dumps({"message": log_message}))
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "logged"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/api/android-log", methods=["GET", "POST", "DELETE"])
 def android_log():
     if request.method == "POST":

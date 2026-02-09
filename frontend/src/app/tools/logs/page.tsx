@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   Smartphone,
+  Terminal,
   Trash2,
   Wifi,
   X,
@@ -29,6 +30,35 @@ const formatTime = (value: string) => {
   }).format(date);
 };
 
+// Parse timber log line: "[D/Tag] message" => { priority, tag, message }
+const parseTimberLog = (raw: string) => {
+  const match = raw.match(/^\[([DIWEA])\/([^\]]+)\]\s*(.*)$/s);
+  if (!match) return { priority: "", tag: "", message: raw };
+  return { priority: match[1], tag: match[2], message: match[3] };
+};
+
+const priorityColor = (p: string) => {
+  switch (p) {
+    case "D": return "text-cyan-400";
+    case "I": return "text-green-400";
+    case "W": return "text-yellow-400";
+    case "E": return "text-red-400";
+    case "A": return "text-red-500 font-bold";
+    default: return "text-slate-400";
+  }
+};
+
+const priorityBg = (p: string) => {
+  switch (p) {
+    case "D": return "bg-cyan-500/15 text-cyan-400";
+    case "I": return "bg-green-500/15 text-green-400";
+    case "W": return "bg-yellow-500/15 text-yellow-400";
+    case "E": return "bg-red-500/15 text-red-400";
+    case "A": return "bg-red-500/25 text-red-400";
+    default: return "bg-slate-700 text-slate-400";
+  }
+};
+
 // Event color mappings for visual variety
 const getEventColor = (eventName: string) => {
   const colors: Record<string, { bg: string; text: string; glow: string }> = {
@@ -38,6 +68,7 @@ const getEventColor = (eventName: string) => {
     result_diagnose_preventions_view: { bg: "bg-amber-500/20", text: "text-amber-400", glow: "shadow-amber-500/20" },
     result_diagnose_reasons_view: { bg: "bg-rose-500/20", text: "text-rose-400", glow: "shadow-rose-500/20" },
     scan_view: { bg: "bg-cyan-500/20", text: "text-cyan-400", glow: "shadow-cyan-500/20" },
+    timber: { bg: "bg-orange-500/20", text: "text-orange-400", glow: "shadow-orange-500/20" },
   };
   return colors[eventName] || { bg: "bg-slate-700", text: "text-slate-300", glow: "" };
 };
@@ -55,6 +86,9 @@ export default function LogsPage() {
   const [selectedEvent, setSelectedEvent] = useState<string>("");
   const [selectedVersion, setSelectedVersion] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [viewMode, setViewMode] = useState<"all" | "timber">("all");
+  const [autoScroll, setAutoScroll] = useState(true);
+  const terminalRef = useRef<HTMLDivElement>(null);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -106,9 +140,10 @@ export default function LogsPage() {
 
   const filteredLogs = useMemo(() => {
     let filtered = logs.filter((log) => {
+      if (viewMode === "timber" && log.eventName !== "timber") return false;
+      if (viewMode === "all" && selectedEvent && log.eventName !== selectedEvent) return false;
       if (selectedDevice && log.deviceName !== selectedDevice) return false;
-      if (selectedEvent && log.eventName !== selectedEvent) return false;
-      if (selectedVersion && log.versionCode !== selectedVersion) return false;
+      if (viewMode === "all" && selectedVersion && log.versionCode !== selectedVersion) return false;
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const searchable = [
@@ -132,7 +167,14 @@ export default function LogsPage() {
     });
 
     return filtered;
-  }, [logs, searchQuery, selectedDevice, selectedEvent, selectedVersion, sortOrder]);
+  }, [logs, searchQuery, selectedDevice, selectedEvent, selectedVersion, sortOrder, viewMode]);
+
+  // Auto-scroll for timber terminal view
+  useEffect(() => {
+    if (autoScroll && viewMode === "timber" && terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [filteredLogs, autoScroll, viewMode]);
 
   const stats = useMemo(() => {
     return {
@@ -140,6 +182,7 @@ export default function LogsPage() {
       filtered: filteredLogs.length,
       devices: new Set(logs.map((l) => l.deviceName)).size,
       events: new Set(logs.map((l) => l.eventName)).size,
+      timber: logs.filter((l) => l.eventName === "timber").length,
     };
   }, [logs, filteredLogs]);
 
@@ -192,6 +235,37 @@ export default function LogsPage() {
             </div>
           </div>
 
+          {/* View mode toggle */}
+          <div className="flex items-center gap-1 rounded-xl bg-white/5 border border-white/10 p-1">
+            <button
+              onClick={() => setViewMode("all")}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                viewMode === "all"
+                  ? "bg-white/10 text-white"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              <Wifi className="w-4 h-4" />
+              Events
+            </button>
+            <button
+              onClick={() => setViewMode("timber")}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                viewMode === "timber"
+                  ? "bg-gradient-to-r from-orange-500/20 to-amber-500/20 text-orange-400 border border-orange-500/20"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              <Terminal className="w-4 h-4" />
+              Timber
+              {stats.timber > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 text-xs">
+                  {stats.timber}
+                </span>
+              )}
+            </button>
+          </div>
+
           {/* Live toggle */}
           <button
             onClick={() => setStreaming((p) => !p)}
@@ -219,8 +293,8 @@ export default function LogsPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           {[
             { label: "Total", value: stats.total, color: "from-cyan-500 to-blue-500", icon: Zap },
+            { label: "Timber", value: stats.timber, color: "from-orange-500 to-amber-500", icon: Terminal },
             { label: "Devices", value: stats.devices, color: "from-violet-500 to-purple-500", icon: Smartphone },
-            { label: "Events", value: stats.events, color: "from-amber-500 to-orange-500", icon: Filter },
             { label: "Filtered", value: stats.filtered, color: "from-emerald-500 to-teal-500", icon: Search },
           ].map((stat) => (
             <div
@@ -344,10 +418,69 @@ export default function LogsPage() {
             </div>
           )}
 
-          {!loading &&
+          {/* Timber terminal view */}
+          {!loading && viewMode === "timber" && filteredLogs.length > 0 && (
+            <div className="rounded-xl bg-black/60 border border-white/10 overflow-hidden">
+              {/* Terminal header */}
+              <div className="flex items-center justify-between px-4 py-2.5 bg-white/5 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1.5">
+                    <span className="w-3 h-3 rounded-full bg-red-500/80" />
+                    <span className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                    <span className="w-3 h-3 rounded-full bg-green-500/80" />
+                  </div>
+                  <span className="text-xs text-slate-500 font-mono ml-2">Timber Remote Debug</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setAutoScroll((p) => !p)}
+                    className={`text-xs px-2 py-1 rounded font-mono transition-all ${
+                      autoScroll
+                        ? "bg-green-500/15 text-green-400"
+                        : "bg-white/5 text-slate-500"
+                    }`}
+                  >
+                    auto-scroll {autoScroll ? "on" : "off"}
+                  </button>
+                  <span className="text-xs text-slate-600 font-mono">{filteredLogs.length} lines</span>
+                </div>
+              </div>
+              {/* Terminal body */}
+              <div
+                ref={terminalRef}
+                className="max-h-[70vh] overflow-y-auto p-4 font-mono text-sm leading-relaxed scroll-smooth"
+              >
+                {filteredLogs.map((log, index) => {
+                  const raw = log.params?.message || JSON.stringify(log.params);
+                  const { priority, tag, message } = parseTimberLog(raw);
+                  return (
+                    <div
+                      key={`${log.timestamp}-${index}`}
+                      className="flex gap-0 hover:bg-white/[0.03] py-0.5 px-1 rounded group"
+                    >
+                      <span className="text-slate-600 select-none shrink-0 w-[70px]">
+                        {formatTime(log.timestamp)}
+                      </span>
+                      <span className={`shrink-0 w-5 text-center font-bold ${priorityColor(priority)}`}>
+                        {priority || "?"}
+                      </span>
+                      <span className="text-violet-400 shrink-0 mx-1">
+                        {tag ? `${tag}:` : ""}
+                      </span>
+                      <span className="text-slate-300 break-all whitespace-pre-wrap">{message}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Card view for events */}
+          {!loading && viewMode === "all" &&
             filteredLogs.map((log, index) => {
               const eventColor = getEventColor(log.eventName);
               const hasParams = log.params && Object.keys(log.params).length > 0;
+              const isTimber = log.eventName === "timber";
 
               return (
                 <div
@@ -364,17 +497,40 @@ export default function LogsPage() {
                       <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${eventColor.bg} ${eventColor.text}`}>
                         {log.eventName}
                       </span>
+                      {isTimber && (() => {
+                        const { priority } = parseTimberLog(log.params?.message || "");
+                        return priority ? (
+                          <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold ${priorityBg(priority)}`}>
+                            {priority}
+                          </span>
+                        ) : null;
+                      })()}
                       <span className="flex items-center gap-1.5 text-sm text-slate-400">
                         <Smartphone className="w-3.5 h-3.5" />
                         {log.deviceName}
                       </span>
-                      <span className="px-2 py-0.5 rounded bg-white/5 text-xs text-slate-500">
-                        v{log.versionCode}
-                      </span>
+                      {log.versionCode && (
+                        <span className="px-2 py-0.5 rounded bg-white/5 text-xs text-slate-500">
+                          v{log.versionCode}
+                        </span>
+                      )}
                     </div>
 
-                    {/* Params */}
-                    {hasParams && (
+                    {/* Timber message inline */}
+                    {isTimber && log.params?.message && (() => {
+                      const { priority, tag, message } = parseTimberLog(log.params.message);
+                      return (
+                        <div className="mt-2 p-2.5 rounded-lg bg-black/30 border border-white/5 font-mono text-sm">
+                          <span className={`font-bold ${priorityColor(priority)}`}>{priority}</span>
+                          <span className="text-violet-400">/{tag}</span>
+                          <span className="text-slate-500 mx-1.5">|</span>
+                          <span className="text-slate-300 break-all whitespace-pre-wrap">{message}</span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Params (non-timber) */}
+                    {hasParams && !isTimber && (
                       <div className="mt-3">
                         <pre className="p-3 rounded-lg bg-black/20 border border-white/5 text-xs font-mono text-emerald-400 overflow-x-auto">
                           {JSON.stringify(log.params, null, 2)}
