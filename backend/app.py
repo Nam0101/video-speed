@@ -532,6 +532,67 @@ def _opencv_grid_remove_bg(
     return encoded.tobytes()
 
 
+def _remove_light_edge_fringe(
+    image_data: bytes,
+    *,
+    sat_threshold: int = 45,
+    val_threshold: int = 170,
+    edge_width: int = 3,
+) -> bytes:
+    """Remove bright/gray fringe pixels only near transparent boundaries."""
+    import cv2
+    import numpy as np
+
+    sat_threshold = max(0, min(255, int(sat_threshold)))
+    val_threshold = max(0, min(255, int(val_threshold)))
+    edge_width = max(1, min(8, int(edge_width)))
+
+    img = Image.open(io.BytesIO(image_data)).convert("RGBA")
+    rgba = np.array(img, dtype=np.uint8)
+    alpha = rgba[..., 3]
+    fg = alpha > 0
+    if not np.any(fg):
+        return image_data
+
+    # Distance from each foreground pixel to the nearest transparent edge.
+    dist = cv2.distanceTransform((fg.astype(np.uint8) * 255), cv2.DIST_L2, 3)
+    rgb = rgba[..., :3]
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    sat = hsv[..., 1]
+    val = hsv[..., 2]
+
+    low_sat_bright = fg & (sat <= sat_threshold) & (val >= val_threshold)
+
+    # Stage 1: remove strict fringe right on boundary.
+    fringe = low_sat_bright & (dist <= float(edge_width))
+    alpha[fringe] = 0
+
+    # Stage 2: remove full low-sat bright components that are connected to that fringe.
+    # This catches thicker white halos while preserving isolated internal whites.
+    candidate = (alpha > 0) & low_sat_bright
+    if np.any(candidate):
+        num_labels, labels, _, _ = cv2.connectedComponentsWithStats(
+            (candidate.astype(np.uint8) * 255),
+            connectivity=8,
+        )
+        edge_touched_labels: set[int] = set()
+        ys, xs = np.where(fringe)
+        for y, x in zip(ys, xs):
+            label = int(labels[y, x])
+            if label > 0:
+                edge_touched_labels.add(label)
+
+        if edge_touched_labels:
+            remove_more = np.isin(labels, list(edge_touched_labels))
+            alpha[remove_more] = 0
+
+    rgba[..., 3] = np.where(alpha > 127, 255, 0).astype(np.uint8)
+
+    out = io.BytesIO()
+    Image.fromarray(rgba, "RGBA").save(out, format="PNG")
+    return out.getvalue()
+
+
 def _remove_alpha(image_data: bytes, bg_color: tuple = (255, 255, 255)) -> bytes:
     """Replace transparent background with solid color.
     
@@ -1573,6 +1634,10 @@ def remove_background():
             session = _get_rembg_session()
             output_data = rembg_remove(input_data, session=session)
 
+        # Pixel-art methods: trim white/gray fringe at transparent edge.
+        if method in {"flood", "ai_hard", "opencv_grid"}:
+            output_data = _remove_light_edge_fringe(output_data)
+
         # Optionally remove alpha channel
         if remove_alpha:
             output_data = _remove_alpha(output_data, bg_color)
@@ -1713,6 +1778,9 @@ def remove_background_zip():
                     )
                 else:
                     output_data = rembg_remove(input_data, session=session)
+
+                if method in {"flood", "ai_hard", "opencv_grid"}:
+                    output_data = _remove_light_edge_fringe(output_data)
                 
                 # Free input data immediately
                 del input_data
