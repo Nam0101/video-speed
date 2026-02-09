@@ -1,0 +1,27 @@
+Script started on Thu Jan 29 15:47:59 2026
+[1m[7m%[27m[1m[0m                                                              [0m[27m[24m[Jnamnv@namnvs-Mac-mini video-speed % [K[?2004h[?2004l
+[1m[7m%[27m[1m[0m                                                              [0m[27m[24m[Jnamnv@namnvs-Mac-mini video-speed % [K[?2004hsssh root@100.93.2.3 'mkdir [K  -p /root/clawd/skills/perplexity && cat > /root/clawd/skills/ [Kpperplexity/SKILL.md << '\''EOF'\''[?2004l
+[0m[27m[24m[Jquote> [K[?2004h----[?2004l
+[0m[27m[24m[Jquote> [K[?2004hnname: perplexity[?2004l
+[0m[27m[24m[Jquote> [K[?2004hddescription: Web research using Perplexity AI API[?2004l
+[0m[27m[24m[Jquote> [K[?2004h----[?2004l
+[0m[27m[24m[Jquote> [K[?2004h[?2004l
+[0m[27m[24m[Jquote> [K[?2004h## Perplexity Research Skill[?2004l
+[0m[27m[24m[Jquote> [K[?2004h[?2004l
+[0m[27m[24m[Jquote> [K[?2004hUUse this skill to research and search information on th [Kee web using Perplexity AI.[?2004l
+[0m[27m[24m[Jquote> [K[?2004h[?2004l
+[0m[27m[24m[Jquote> [K[?2004h### Usage[?2004l
+[0m[27m[24m[Jquote> [K[?2004h[?2004l
+[0m[27m[24m[Jquote> [K[?2004hRRun the research script with a query:[?2004l
+[0m[27m[24m[Jquote> [K[?2004h[?2004l
+[0m[27m[24m[Jquote> [K[?2004h````bash[?2004l
+[0m[27m[24m[Jquote> [K[?2004hbbash /root/clawd/skills/perplexity/research.sh "your qu [Keestion here"[?2004l
+[0m[27m[24m[Jquote> [K[?2004h````[?2004l
+[0m[27m[24m[Jquote> [K[?2004h[?2004l
+[0m[27m[24m[Jquote> [K[?2004h### Examples[?2004l
+[0m[27m[24m[Jquote> [K[?2004h[?2004l
+[0m[27m[24m[Jquote> [K[?2004h-- Research latest news: `bash /root/clawd/skills/perple [Kxxity/research.sh "latest AI developments 2026"`[?2004l
+[0m[27m[24m[Jquote> [K[?2004h-- Answer questions: `bash /root/clawd/skills/perplexity [K//research.sh "what is quantum computing"`[?2004l
+[0m[27m[24m[Jquote> [K[?2004h-- Find facts: `bash /root/clawd/skills/perplexity/resea [Krrch.sh "population of Vietnam 2026"`[?2004l
+[0m[27m[24m[Jquote> [K[?2004hEEOF'[?2004l
+[1m[7m%[27m[1m[0m                                                              [0m[27m[24m[Jnamnv@namnvs-Mac-mini video-speed % [K[?2004h

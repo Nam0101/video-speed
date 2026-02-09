@@ -29,6 +29,8 @@ export default function RemoveBackgroundPage() {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [resultUrl, setResultUrl] = useState<string | null>(null);
     const [removeAlpha, setRemoveAlpha] = useState(false);
+    const [pixelArtMode, setPixelArtMode] = useState(false);
+    const [tolerance, setTolerance] = useState(10);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleDrag = useCallback((event: React.DragEvent) => {
@@ -92,10 +94,12 @@ export default function RemoveBackgroundPage() {
 
             try {
                 setProcessing(true);
-                setStatus("processing:Đang xóa nền bằng AI...");
+                setStatus(pixelArtMode ? "processing:Đang xóa nền (Pixel Art flood-fill)..." : "processing:Đang xóa nền bằng AI...");
                 const blob = await apiClient.removeBackground(file, {
                     removeAlpha,
                     bgColor: "#FFFFFF",
+                    method: pixelArtMode ? "flood" : "ai",
+                    tolerance,
                 });
 
                 // Create preview URL for result
@@ -121,10 +125,12 @@ export default function RemoveBackgroundPage() {
 
             try {
                 setProcessing(true);
-                setStatus(`processing:Đang xóa nền ${files.length} ảnh...`);
+                setStatus(`processing:Đang xóa nền ${files.length} ảnh${pixelArtMode ? " (Pixel Art)" : ""}...`);
                 const blob = await apiClient.removeBackgroundZip(files, {
                     removeAlpha,
                     bgColor: "#FFFFFF",
+                    method: pixelArtMode ? "flood" : "ai",
+                    tolerance,
                 });
                 downloadBlob(blob, `nobg_${files.length}_images.zip`);
                 setStatus(`success:Đã xóa nền ${files.length} ảnh thành công!`);
@@ -370,7 +376,7 @@ export default function RemoveBackgroundPage() {
                             <div className="mt-4 grid gap-3 text-xs text-[var(--muted)]">
                                 <div className="flex items-center justify-between">
                                     <span>Model</span>
-                                    <span className="font-semibold text-violet-400">U2NET</span>
+                                    <span className="font-semibold text-violet-400">{pixelArtMode ? "Flood Fill" : "U2NET"}</span>
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <span>Output</span>
@@ -409,6 +415,45 @@ export default function RemoveBackgroundPage() {
                                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${removeAlpha ? "translate-x-6" : "translate-x-1"}`} />
                                     </button>
                                 </label>
+                            </div>
+
+                            {/* Pixel Art Mode Toggle */}
+                            <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                                <label className="flex items-center justify-between cursor-pointer">
+                                    <div>
+                                        <p className="text-sm font-medium text-[var(--foreground)]">Pixel Art</p>
+                                        <p className="text-xs text-[var(--muted)]">Flood-fill từ góc, giữ cạnh sắc nét</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={pixelArtMode}
+                                        onClick={() => setPixelArtMode(!pixelArtMode)}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${pixelArtMode ? "bg-violet-500" : "bg-[var(--secondary)]"}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${pixelArtMode ? "translate-x-6" : "translate-x-1"}`} />
+                                    </button>
+                                </label>
+
+                                {pixelArtMode && (
+                                    <div className="mt-3 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs text-[var(--muted)]">Tolerance</span>
+                                            <span className="text-xs font-semibold text-violet-400">{tolerance}</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min={0}
+                                            max={50}
+                                            value={tolerance}
+                                            onChange={(e) => setTolerance(Number(e.target.value))}
+                                            className="w-full accent-violet-500"
+                                        />
+                                        <p className="text-[10px] text-[var(--muted)]">
+                                            0 = chính xác tuyệt đối, 8-15 = chịu JPEG artifact
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

@@ -299,6 +299,86 @@ def _allowed_image_suffix(filename: str) -> str | None:
     return None
 
 
+def _flood_fill_remove_bg(image_data: bytes, tolerance: int = 10) -> bytes:
+    """Remove background using multi-color flood-fill from image borders.
+
+    Detects all unique background colours along the image border, builds a
+    candidate mask of every pixel matching any of those colours (within
+    *tolerance*), then floods inward from the border keeping only
+    border-connected regions.  Works well for pixel art on flat or
+    grid-paper backgrounds.
+
+    Args:
+        image_data: Raw image bytes (PNG/JPG/WebP).
+        tolerance: Max per-channel colour distance to still count as
+                   "same as background".  0 = exact match only,
+                   8-15 is good for JPEG artefacts.
+
+    Returns:
+        PNG bytes with RGBA (background pixels have alpha=0).
+    """
+    import numpy as np
+    from collections import deque
+
+    img = Image.open(io.BytesIO(image_data)).convert("RGBA")
+    arr = np.array(img)
+    rgb = arr[..., :3].astype(np.int16)
+    h, w = rgb.shape[:2]
+
+    # --- 1. collect border pixel coordinates & colours ------------------
+    border_coords = []
+    for x in range(w):
+        border_coords.append((0, x))
+        border_coords.append((h - 1, x))
+    for y in range(1, h - 1):
+        border_coords.append((y, 0))
+        border_coords.append((y, w - 1))
+
+    # --- 2. deduplicate border colours into clusters --------------------
+    cluster_tol = max(tolerance * 2, 15)
+    unique_bg = []
+    for y, x in border_coords:
+        c = rgb[y, x]
+        matched = False
+        for uc in unique_bg:
+            if np.all(np.abs(c - uc) <= cluster_tol):
+                matched = True
+                break
+        if not matched:
+            unique_bg.append(c.copy())
+
+    # --- 3. build bg-candidate mask (matches ANY border colour) ---------
+    bg_candidate = np.zeros((h, w), dtype=bool)
+    for uc in unique_bg:
+        diff = np.abs(rgb - uc.reshape(1, 1, 3))
+        bg_candidate |= np.all(diff <= tolerance, axis=2)
+
+    # --- 4. BFS from border through bg-candidate pixels -----------------
+    visited = np.zeros((h, w), dtype=bool)
+    bg_mask = np.zeros((h, w), dtype=bool)
+    queue = deque()
+
+    for y, x in border_coords:
+        if bg_candidate[y, x] and not visited[y, x]:
+            visited[y, x] = True
+            queue.append((y, x))
+
+    while queue:
+        y, x = queue.popleft()
+        bg_mask[y, x] = True
+        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w and not visited[ny, nx] and bg_candidate[ny, nx]:
+                visited[ny, nx] = True
+                queue.append((ny, nx))
+
+    arr[bg_mask, 3] = 0
+
+    out = io.BytesIO()
+    Image.fromarray(arr, "RGBA").save(out, format="PNG")
+    return out.getvalue()
+
+
 def _remove_alpha(image_data: bytes, bg_color: tuple = (255, 255, 255)) -> bytes:
     """Replace transparent background with solid color.
     
@@ -1237,18 +1317,22 @@ def png_to_webp():
 
 @app.post("/remove-background")
 def remove_background():
-    """Remove background from an uploaded PNG/JPG/WebP image using AI.
-    
+    """Remove background from an uploaded PNG/JPG/WebP image.
+
     Args (form data):
         file: Image file (PNG/JPG/JPEG/WebP)
+        method: 'ai' (default, rembg U2NET) or 'flood' (flood-fill for pixel art)
+        tolerance: Integer 0-50 for flood-fill tolerance (default 10)
         remove_alpha: Optional. If '1'/'true', replace transparent bg with solid color
         bg_color: Optional. Hex color for background when remove_alpha=true (default: #FFFFFF)
-    
+
     Returns a PNG image with transparent or solid background.
     """
-    if not HAS_REMBG:
+    method = request.form.get("method", "ai").strip().lower()
+
+    if method == "ai" and not HAS_REMBG:
         abort(500, "Thư viện rembg không được cài đặt. Vui lòng cài đặt 'rembg[cpu]'.")
-    
+
     file = request.files.get("file")
     if file is None or file.filename == "":
         abort(400, "Thiếu file ảnh")
@@ -1262,6 +1346,7 @@ def remove_background():
     remove_alpha = _parse_bool(request.form.get("remove_alpha", "0"))
     bg_color_hex = request.form.get("bg_color", "#FFFFFF")
     bg_color = _parse_hex_color(bg_color_hex)
+    tolerance = min(50, max(0, int(request.form.get("tolerance", "10"))))
 
     input_name = f"{uuid.uuid4().hex}{suffix}"
     input_path = UPLOAD_DIR / input_name
@@ -1272,15 +1357,18 @@ def remove_background():
         # Read image
         with open(input_path, 'rb') as f:
             input_data = f.read()
-        
-        # Remove background using rembg with session reuse
-        session = _get_rembg_session()
-        output_data = rembg_remove(input_data, session=session)
-        
+
+        if method == "flood":
+            output_data = _flood_fill_remove_bg(input_data, tolerance=tolerance)
+        else:
+            # Remove background using rembg with session reuse
+            session = _get_rembg_session()
+            output_data = rembg_remove(input_data, session=session)
+
         # Optionally remove alpha channel
         if remove_alpha:
             output_data = _remove_alpha(output_data, bg_color)
-        
+
         # Save output
         with open(output_path, 'wb') as f:
             f.write(output_data)
@@ -1307,17 +1395,21 @@ def remove_background():
 @app.post("/remove-background-zip")
 def remove_background_zip():
     """Remove background from multiple images and return as ZIP.
-    
+
     Args (form data):
         files: Image files (PNG/JPG/JPEG/WebP)
+        method: 'ai' (default, rembg U2NET) or 'flood' (flood-fill for pixel art)
+        tolerance: Integer 0-50 for flood-fill tolerance (default 10)
         remove_alpha: Optional. If '1'/'true', replace transparent bg with solid color
         bg_color: Optional. Hex color for background when remove_alpha=true (default: #FFFFFF)
-    
+
     Returns a ZIP containing PNG images with transparent or solid backgrounds.
     """
-    if not HAS_REMBG:
+    method = request.form.get("method", "ai").strip().lower()
+
+    if method == "ai" and not HAS_REMBG:
         abort(500, "Thư viện rembg không được cài đặt. Vui lòng cài đặt 'rembg[cpu]'.")
-    
+
     files = request.files.getlist("files")
     if not files:
         abort(400, "Thiếu danh sách ảnh (files)")
@@ -1326,6 +1418,7 @@ def remove_background_zip():
     remove_alpha = _parse_bool(request.form.get("remove_alpha", "0"))
     bg_color_hex = request.form.get("bg_color", "#FFFFFF")
     bg_color = _parse_hex_color(bg_color_hex)
+    tolerance = min(50, max(0, int(request.form.get("tolerance", "10"))))
 
     batch_dir = OUTPUT_DIR / f"rembg_{uuid.uuid4().hex}"
     batch_dir.mkdir(parents=True, exist_ok=True)
@@ -1334,27 +1427,30 @@ def remove_background_zip():
     processed_files: list[tuple[str, Path]] = []
 
     try:
-        # Get session once for all images
-        session = _get_rembg_session()
-        
+        # Get session once for all images (only needed for AI method)
+        session = _get_rembg_session() if method == "ai" else None
+
         for index, f in enumerate(files, start=1):
             if f.filename is None or f.filename == "":
                 continue
-                
+
             suffix = _allowed_image_suffix(f.filename)
             if suffix is None:
                 continue  # Skip unsupported files
-            
+
             # Save input file
             input_path = batch_dir / f"input_{index:04d}{suffix}"
             f.save(input_path)
-            
+
             try:
                 # Read and process image sequentially to avoid OOM
                 with open(input_path, 'rb') as fp:
                     input_data = fp.read()
-                
-                output_data = rembg_remove(input_data, session=session)
+
+                if method == "flood":
+                    output_data = _flood_fill_remove_bg(input_data, tolerance=tolerance)
+                else:
+                    output_data = rembg_remove(input_data, session=session)
                 
                 # Free input data immediately
                 del input_data

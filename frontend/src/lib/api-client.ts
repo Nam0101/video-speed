@@ -358,7 +358,7 @@ class APIClient {
         return response.blob();
     }
 
-    async removeBackground(file: File, options?: { removeAlpha?: boolean; bgColor?: string }): Promise<Blob> {
+    async removeBackground(file: File, options?: { removeAlpha?: boolean; bgColor?: string; method?: 'ai' | 'flood'; tolerance?: number }): Promise<Blob> {
         const formData = new FormData();
         formData.append('file', file);
         if (options?.removeAlpha) {
@@ -366,6 +366,12 @@ class APIClient {
         }
         if (options?.bgColor) {
             formData.append('bg_color', options.bgColor);
+        }
+        if (options?.method) {
+            formData.append('method', options.method);
+        }
+        if (options?.tolerance !== undefined) {
+            formData.append('tolerance', options.tolerance.toString());
         }
 
         const response = await fetch(`${this.baseURL}/remove-background`, {
@@ -380,7 +386,7 @@ class APIClient {
         return response.blob();
     }
 
-    async removeBackgroundZip(files: File[], options?: { removeAlpha?: boolean; bgColor?: string }): Promise<Blob> {
+    async removeBackgroundZip(files: File[], options?: { removeAlpha?: boolean; bgColor?: string; method?: 'ai' | 'flood'; tolerance?: number }): Promise<Blob> {
         const formData = new FormData();
         files.forEach((file) => formData.append('files', file));
         if (options?.removeAlpha) {
@@ -388,6 +394,12 @@ class APIClient {
         }
         if (options?.bgColor) {
             formData.append('bg_color', options.bgColor);
+        }
+        if (options?.method) {
+            formData.append('method', options.method);
+        }
+        if (options?.tolerance !== undefined) {
+            formData.append('tolerance', options.tolerance.toString());
         }
 
         const response = await fetch(`${this.baseURL}/remove-background-zip`, {
