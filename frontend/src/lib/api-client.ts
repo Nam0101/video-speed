@@ -33,6 +33,53 @@ export interface TrackingResponse {
     };
 }
 
+export interface ChatTrackingItem {
+    country_id: string;
+    app_version: string;
+    user_id: string;
+    device_id: string;
+    session_id: string;
+    time: string;
+    user_chat: string;
+    img_link: string;
+    bot_response: string;
+    time_response_seconds: number;
+    model: string;
+    platform: string;
+    endpoint_type: string;
+    status: string;
+    has_image: boolean;
+}
+
+export interface ChatTrackingResponse {
+    data: ChatTrackingItem[];
+    pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        total_pages: number;
+    };
+}
+
+export interface ChatSummaryResponse {
+    total_turns: number;
+    total_sessions: number;
+    by_country: { country: string; count: number }[];
+    by_platform: { platform: string; count: number }[];
+    by_app_version: { app_version: string; count: number }[];
+    by_model: { model: string; count: number }[];
+    by_status: { status: string; count: number }[];
+    response_time: {
+        avg_ms: number;
+        min_ms: number;
+        max_ms: number;
+    };
+    image_usage: {
+        with_image: number;
+        without_image: number;
+    };
+}
+
 export interface Log {
     timestamp: string;
     eventName: string;
@@ -81,6 +128,39 @@ class APIClient {
             method: 'POST',
             body: formData,
         });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        return response.json();
+    }
+
+    async getChatTracking(page = 1, limit = 100, session_id?: string): Promise<ChatTrackingResponse> {
+        let url = `${ANALYTICS_BASE_URL}/api/analytics/v1/chat-tracking?page=${page}&limit=${limit}`;
+        if (session_id) {
+            url += `&session_id=${session_id}`;
+        }
+        const response = await fetch(url, { cache: 'no-store' });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        return response.json();
+    }
+
+    async getChatSummary(startDate?: string, endDate?: string): Promise<ChatSummaryResponse> {
+        let url = `${ANALYTICS_BASE_URL}/api/analytics/v1/chat-summary`;
+        const params = new URLSearchParams();
+        if (startDate) params.append('start_date', startDate);
+        if (endDate) params.append('end_date', endDate);
+        const queryString = params.toString();
+        if (queryString) {
+            url += `?${queryString}`;
+        }
+
+        const response = await fetch(url, { cache: 'no-store' });
 
         if (!response.ok) {
             throw new Error(await response.text());

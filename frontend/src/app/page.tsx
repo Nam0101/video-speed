@@ -172,6 +172,12 @@ export default function Home() {
             >
               Tracking
             </Link>
+            <Link
+              href="/chat-tracking"
+              className="rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 cursor-pointer"
+            >
+              Chat Tracking
+            </Link>
           </div>
         </nav>
 
