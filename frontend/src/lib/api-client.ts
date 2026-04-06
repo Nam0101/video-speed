@@ -137,8 +137,7 @@ class APIClient {
     }
 
     async getChatTracking(page = 1, limit = 100, session_id?: string): Promise<ChatTrackingResponse> {
-        const CHAT_ANALYTICS_URL = process.env.NEXT_PUBLIC_CHAT_ANALYTICS_URL || 'http://localhost:7000';
-        let url = `${CHAT_ANALYTICS_URL}/api/analytics/v1/chat-tracking?page=${page}&limit=${limit}`;
+        let url = `${ANALYTICS_BASE_URL}/api/analytics/v1/chat-tracking?page=${page}&limit=${limit}`;
         if (session_id) {
             url += `&session_id=${session_id}`;
         }
@@ -152,8 +151,7 @@ class APIClient {
     }
 
     async getChatSummary(startDate?: string, endDate?: string): Promise<ChatSummaryResponse> {
-        const CHAT_ANALYTICS_URL = process.env.NEXT_PUBLIC_CHAT_ANALYTICS_URL || 'http://localhost:7000';
-        let url = `${CHAT_ANALYTICS_URL}/api/analytics/v1/chat-summary`;
+        let url = `${ANALYTICS_BASE_URL}/api/analytics/v1/chat-summary`;
         const params = new URLSearchParams();
         if (startDate) params.append('start_date', startDate);
         if (endDate) params.append('end_date', endDate);
