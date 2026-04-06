@@ -594,9 +594,13 @@ export default function ChatTrackingPage() {
 
                             {/* Session & User */}
                             <td className="px-4 py-3 align-top">
-                              <div className="font-mono text-xs text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20 w-fit mb-1 truncate max-w-[200px]" title={record.session_id}>
-                                {record.session_id}
-                              </div>
+                              {record.session_id ? (
+                                <div className="font-mono text-xs text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20 w-fit mb-1 truncate max-w-[200px]" title={record.session_id}>
+                                  {record.session_id}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-slate-500 italic mb-1">No session ID</div>
+                              )}
                               {record.user_id && (
                                 <div className="text-xs text-slate-400 mt-1 truncate max-w-[200px]" title={record.user_id}>User: {record.user_id}</div>
                               )}
@@ -616,36 +620,41 @@ export default function ChatTrackingPage() {
                                 <Smartphone size={12} className="mr-1" /> {platLabel.label}
                               </div>
                               <div className="text-xs font-mono text-slate-500 truncate max-w-[150px]" title={record.device_id}>
-                                {record.device_id?.substring(0, 15)}{record.device_id?.length > 15 ? '...' : ''}
+                                {record.device_id?.substring(0, 15)}{record.device_id && record.device_id.length > 15 ? '...' : ''}
                               </div>
                             </td>
 
                             {/* Chat Details */}
-                            <td className="px-4 py-3 align-top max-w-[300px]">
-                              <div className="mb-2">
-                                <div className="text-xs font-semibold text-slate-500 uppercase mb-0.5 flex items-center justify-between">
-                                  <span>User</span>
-                                  {record.has_image && (
-                                     <ImageIcon size={12} className="text-blue-400 ml-1 inline" />
+                            <td className="px-4 py-3 align-top max-w-[400px]">
+                              <div className="flex flex-col gap-3">
+                                {/* User Message */}
+                                <div className="flex flex-col items-end">
+                                  <div className="text-[10px] font-semibold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                                    {record.has_image && <ImageIcon size={10} className="text-blue-400" />}
+                                    User
+                                  </div>
+                                  <div className="text-sm text-slate-200 bg-slate-700/60 px-3 py-2 rounded-2xl rounded-tr-sm border border-slate-600/50 max-w-[90%] max-h-32 overflow-y-auto custom-scrollbar break-words whitespace-pre-wrap shadow-sm">
+                                    {record.user_chat}
+                                  </div>
+                                  {record.img_link && (
+                                    <div className="mt-1 text-[10px] text-blue-400">
+                                      <a href={record.img_link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center">
+                                        <ImageIcon size={10} className="mr-1" /> View attached image
+                                      </a>
+                                    </div>
                                   )}
                                 </div>
-                                <div className="text-sm text-slate-200 bg-slate-800/50 p-2 rounded-lg border border-slate-700/50 line-clamp-2" title={record.user_chat}>
-                                  {record.user_chat}
+
+                                {/* Bot Message */}
+                                <div className="flex flex-col items-start">
+                                  <div className="text-[10px] font-semibold text-blue-400/80 uppercase mb-1 flex items-center gap-1">
+                                    <Bot size={10} /> Bot
+                                  </div>
+                                  <div className="text-sm text-blue-100 bg-blue-600/20 px-3 py-2 rounded-2xl rounded-tl-sm border border-blue-500/30 max-w-[90%] max-h-32 overflow-y-auto custom-scrollbar break-words whitespace-pre-wrap shadow-sm">
+                                    {record.bot_response}
+                                  </div>
                                 </div>
                               </div>
-                              <div>
-                                <div className="text-xs font-semibold text-slate-500 uppercase mb-0.5">Bot</div>
-                                <div className="text-sm text-slate-300 bg-blue-900/20 p-2 rounded-lg border border-blue-900/30 line-clamp-2" title={record.bot_response}>
-                                  {record.bot_response}
-                                </div>
-                              </div>
-                              {record.img_link && (
-                                <div className="mt-2 text-[10px] text-blue-400 truncate">
-                                  <a href={record.img_link} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center">
-                                    <ImageIcon size={10} className="mr-1" /> View attached image
-                                  </a>
-                                </div>
-                              )}
                             </td>
 
                             {/* Model & Status */}
