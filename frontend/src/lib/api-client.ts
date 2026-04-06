@@ -11,6 +11,31 @@ export interface ConversionResponse {
     message?: string;
 }
 
+export type AiGenerationTrackingStatus = 'SUCCESS' | 'FAIL';
+
+export interface AiGenerationTrackingItem {
+    id: number;
+    createdAt: string;
+    appVersion: string | null;
+    userId: string | null;
+    countryId: string | null;
+    prompt: string;
+    style: string | null;
+    forYouPrompt: string | null;
+    imageReference: string | null;
+    output: string | null;
+    durationSeconds: number;
+    status: AiGenerationTrackingStatus;
+}
+
+export interface PaginatedResponse<T> {
+    data: T[];
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+}
+
 export interface TrackingItem {
     date: string;
     country_code: string;
@@ -766,6 +791,16 @@ class APIClient {
             failedCount: 0,
             failedFiles: [],
         };
+    }
+
+    async getAiGenerationTracking(page = 1, pageSize = 20): Promise<PaginatedResponse<AiGenerationTrackingItem>> {
+        const response = await fetch(`https://wallpaper.cemsoftwareltd.com/tracking/ai-images?page=${page}&pageSize=${pageSize}`, { cache: 'no-store' });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+
+        return response.json();
     }
 
     async getTracking(page = 1, limit = 100): Promise<TrackingResponse> {
