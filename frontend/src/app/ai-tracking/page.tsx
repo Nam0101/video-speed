@@ -76,7 +76,7 @@ export default function AiTrackingPage() {
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100 bg-[url('/grid.svg')] bg-center bg-fixed">
             <header className="sticky top-0 z-40 w-full border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-xl supports-[backdrop-filter]:bg-slate-950/60">
-                <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+                <div className="container mx-auto px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
                         <Link href="/" className="p-2 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
                             <ArrowLeft size={20} />
@@ -88,8 +88,16 @@ export default function AiTrackingPage() {
                             <h1 className="text-2xl font-bold text-white md:text-3xl tracking-tight">AI Generation Tracking</h1>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <button onClick={handleRefresh} disabled={loading} className="btn-primary cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-500 transition-colors disabled:opacity-50">
+                    <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                        {data && data.data && data.data.length > 0 && (
+                            <div className="px-4 py-2 bg-slate-800/50 rounded-lg text-sm flex items-center gap-2 border border-slate-700 whitespace-nowrap">
+                                <span className="text-slate-400">Avg Gen Time (Page):</span>
+                                <span className="font-bold text-emerald-400">
+                                    {(data.data.reduce((acc, item) => acc + (item.durationSeconds || 0), 0) / data.data.length).toFixed(2)}s
+                                </span>
+                            </div>
+                        )}
+                        <button onClick={handleRefresh} disabled={loading} className="btn-primary cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-500 transition-colors disabled:opacity-50 ml-auto sm:ml-0">
                             <RefreshCw size={16} className={`${loading ? 'animate-spin' : ''}`} />
                             Refresh
                         </button>
@@ -183,16 +191,16 @@ export default function AiTrackingPage() {
                                                             <div className="text-slate-300"><span className="text-slate-500">Version:</span> {item.appVersion || 'N/A'}</div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-3 align-top max-w-[250px]">
-                                                        <div className="flex flex-col gap-2">
+                                                    <td className="px-4 py-3 align-top min-w-[300px] max-w-[400px]">
+                                                        <div className="flex flex-col gap-2 w-full">
                                                             <div>
                                                                 <span className="text-[10px] font-semibold text-slate-500 uppercase">Prompt</span>
-                                                                <div className="text-sm text-slate-200 truncate" title={item.prompt}>{item.prompt}</div>
+                                                                <div className="text-sm text-slate-200 bg-slate-800/50 p-2 rounded-md max-h-32 overflow-y-auto custom-scrollbar break-words whitespace-pre-wrap">{item.prompt}</div>
                                                             </div>
                                                             {item.forYouPrompt && (
                                                                 <div>
                                                                     <span className="text-[10px] font-semibold text-blue-400/80 uppercase">For You Prompt</span>
-                                                                    <div className="text-sm text-blue-100 truncate" title={item.forYouPrompt}>{item.forYouPrompt}</div>
+                                                                    <div className="text-sm text-blue-100 bg-blue-900/20 p-2 rounded-md max-h-32 overflow-y-auto custom-scrollbar break-words whitespace-pre-wrap">{item.forYouPrompt}</div>
                                                                 </div>
                                                             )}
                                                             <div className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700 w-fit">
