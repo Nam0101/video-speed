@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
     ArrowLeft,
+    Download,
     RefreshCw,
     ChevronLeft,
     ChevronRight,
@@ -15,19 +16,17 @@ import {
     CheckCircle2
 } from 'lucide-react';
 import { apiClient, AiGenerationTrackingItem, PaginatedResponse } from '@/lib/api-client';
-
-export function parseJsonString<T>(value: string | null): T | null {
-    if (!value) return null;
-    try {
-        return JSON.parse(value) as T;
-    } catch {
-        return null;
-    }
-}
+import { downloadBlob } from '@/lib/file-utils';
+import {
+    buildAiTrackingCsv,
+    getAiTrackingExportFilename,
+    parseJsonString
+} from '@/lib/ai-tracking-export';
 
 export default function AiTrackingPage() {
     const [data, setData] = useState<PaginatedResponse<AiGenerationTrackingItem> | null>(null);
     const [loading, setLoading] = useState(true);
+    const [exporting, setExporting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const [page, setPage] = useState(1);
@@ -64,13 +63,38 @@ export default function AiTrackingPage() {
 
     const handleRefresh = () => {
         setPage(1);
-        // Force a re-fetch by triggering a state update that doesn't change value, but we can just use a trick
-        // Actually, we'll just re-fetch in place.
         setLoading(true);
+        setError(null);
         apiClient.getAiGenerationTracking(page, pageSize)
             .then(res => setData(res))
             .catch(err => setError(err instanceof Error ? err.message : 'Unknown error'))
             .finally(() => setLoading(false));
+    };
+
+    const handleExportCsv = async () => {
+        setExporting(true);
+
+        try {
+            let currentPage = 1;
+            let totalPages = 1;
+            const allRecords: AiGenerationTrackingItem[] = [];
+
+            do {
+                const response = await apiClient.getAiGenerationTracking(currentPage, 100);
+                allRecords.push(...response.data);
+                totalPages = response.totalPages;
+                currentPage += 1;
+            } while (currentPage <= totalPages);
+
+            const csvContent = buildAiTrackingCsv(allRecords);
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            downloadBlob(blob, getAiTrackingExportFilename());
+        } catch (err) {
+            console.error('AI tracking export failed:', err);
+            alert(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        } finally {
+            setExporting(false);
+        }
     };
 
     return (
@@ -89,6 +113,18 @@ export default function AiTrackingPage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
+                        <button
+                            onClick={handleExportCsv}
+                            disabled={loading || exporting || (data?.totalItems ?? 0) === 0}
+                            className="btn-secondary cursor-pointer inline-flex items-center gap-2 disabled:cursor-not-allowed"
+                        >
+                            {exporting ? (
+                                <RefreshCw size={16} className="animate-spin" />
+                            ) : (
+                                <Download size={16} />
+                            )}
+                            {exporting ? 'Exporting...' : 'Export CSV'}
+                        </button>
                         <button onClick={handleRefresh} disabled={loading} className="btn-primary cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-500 transition-colors disabled:opacity-50">
                             <RefreshCw size={16} className={`${loading ? 'animate-spin' : ''}`} />
                             Refresh
